@@ -1,0 +1,1 @@
+"""Blocos reusados pelos domínios."""

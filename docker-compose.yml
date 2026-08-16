@@ -1,0 +1,67 @@
+name: finance-api
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
+      POSTGRES_DB: ${POSTGRES_DB:-finance}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finance} -d ${POSTGRES_DB:-finance}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Banco de teste: Postgres real (o desenho usa índice parcial, FILTER e
+  # NUMERIC — SQLite não reproduz nenhum dos três). Dados em tmpfs: some a cada
+  # restart, e é o que queremos.
+  db-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: finance
+      POSTGRES_DB: finance_test
+    ports:
+      - "${POSTGRES_TEST_PORT:-5433}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance -d finance_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Dentro da rede do compose o banco atende em `db`, não em localhost.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-finance}@db:5432/${POSTGRES_DB:-finance}
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Sao_Paulo}
+      PYTHONPATH: /app/src
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./src:/app/src:ro
+    command:
+      - uvicorn
+      - finance_api.main:create_app
+      - --factory
+      - --host=0.0.0.0
+      - --port=8000
+      - --reload
+      - --reload-dir=/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
