@@ -41,6 +41,9 @@ typecheck:  ## mypy --strict em src/
 
 check: lint typecheck test  ## Tudo que o CI roda
 
+seed:  ## Cria/repõe a conta de desenvolvimento (só em ENVIRONMENT=local|test)
+	docker compose exec api python -m cli seed-dev
+
 migrate:  ## Aplica as migrations pendentes
 	$(VENV)/bin/alembic upgrade head
 
