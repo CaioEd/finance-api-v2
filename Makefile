@@ -46,13 +46,14 @@ migrate:  ## Aplica as migrations pendentes
 
 revision:  ## Gera uma migration: make revision m="cria tabela users"
 	$(VENV)/bin/alembic revision --autogenerate -m "$(m)"
-	@# O autogenerate emite aspas simples e imports fora de ordem; o lint do CI não perdoa.
-	$(VENV)/bin/ruff check --fix alembic/versions
+	@# O autogenerate emite aspas simples e linhas longas; o lint do CI não perdoa.
+	@# Formatar primeiro: é o format que quebra as linhas que o check reclamaria.
 	$(VENV)/bin/ruff format alembic/versions
+	$(VENV)/bin/ruff check --fix alembic/versions
 
 run:  ## Sobe a API na máquina, com reload
-	$(VENV)/bin/uvicorn finance_api.main:create_app --factory --reload
+	$(VENV)/bin/uvicorn main:create_app --factory --reload
 
 clean:  ## Remove caches
-	rm -rf .pytest_cache .mypy_cache .ruff_cache
-	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	rm -rf .cache
+	find . -path ./.venv -prune -o -type d -name __pycache__ -print0 | xargs -0 rm -rf

@@ -8,9 +8,8 @@ __pycache__/
 build/
 dist/
 
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+# Caches das ferramentas (ruff, mypy, pytest) — todos sob .cache/
+.cache/
 .coverage
 htmlcov/
 

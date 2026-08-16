@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     database_url: str
     """DSN async obrigatório: postgresql+asyncpg://user:pass@host:port/db"""
 
+    jwt_secret_key: str
+    """Assina o access token. Sem default e sem valor de exemplo, por motivos óbvios."""
+
     # --- Aplicação (com default) ----------------------------------------
     app_name: str = "finance-api"
     debug: bool = False
@@ -51,6 +54,18 @@ class Settings(BaseSettings):
     # --- HTTP ------------------------------------------------------------
     allowed_hosts: CsvList = ["*"]
     cors_origins: CsvList = []
+
+    # --- Autenticação -----------------------------------------------------
+    jwt_algorithm: str = "HS256"
+    access_token_ttl_seconds: int = 900
+    """15 minutos. Access token não é revogável: a janela de exposição é o TTL."""
+    refresh_token_ttl_days: int = 30
+
+    # Custo do argon2id. Configurável para que a suíte de testes possa baixá-lo
+    # sem que isso vire uma decisão de produção escondida no código.
+    argon2_time_cost: int = 3
+    argon2_memory_cost_kib: int = 65536
+    argon2_parallelism: int = 4
 
     # --- Banco -----------------------------------------------------------
     db_echo: bool = False
@@ -79,6 +94,13 @@ class Settings(BaseSettings):
     def _async_driver(cls, value: str) -> str:
         if not value.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL precisa usar o driver async: postgresql+asyncpg://...")
+        return value
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def _secret_is_long_enough(cls, value: str) -> str:
+        if len(value) < 32:
+            raise ValueError("JWT_SECRET_KEY precisa ter ao menos 32 caracteres")
         return value
 
     @model_validator(mode="after")

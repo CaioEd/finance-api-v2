@@ -5,12 +5,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from finance_api.core.config import Environment, Settings
+from core.config import Environment, Settings
 
 VALID = {
     "environment": "local",
     "app_timezone": "America/Sao_Paulo",
     "database_url": "postgresql+asyncpg://u:p@localhost:5432/db",
+    "jwt_secret_key": "chave-de-teste-com-comprimento-mais-que-suficiente",
 }
 
 
@@ -18,7 +19,9 @@ def _settings(**overrides: object) -> Settings:
     return Settings(_env_file=None, **{**VALID, **overrides})  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("missing", ["environment", "app_timezone", "database_url"])
+@pytest.mark.parametrize(
+    "missing", ["environment", "app_timezone", "database_url", "jwt_secret_key"]
+)
 def test_required_settings_have_no_default(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
     for name in VALID:
         monkeypatch.delenv(name.upper(), raising=False)

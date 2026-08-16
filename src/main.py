@@ -5,7 +5,7 @@ no import obrigaria a resolver configuração e abrir conexão só para importar
 módulo — o que quebra teste e mata a possibilidade de subir o app com
 configuração diferente. O servidor usa o modo fábrica:
 
-    uvicorn finance_api.main:create_app --factory
+    uvicorn main:create_app --factory
 """
 
 from __future__ import annotations
@@ -18,12 +18,14 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from finance_api import __version__
-from finance_api.api import api_router
-from finance_api.core.config import Settings, get_settings
-from finance_api.core.database import Database
-from finance_api.core.errors import register_exception_handlers
-from finance_api.health import router as health_router
+from api.router import api_router
+from api.routes.health import router as health_router
+from core.clock import Clock
+from core.config import Settings, get_settings
+from core.database import Database
+from core.errors import register_exception_handlers
+from core.security import PasswordHasher, TokenCodec
+from version import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         logger.info("aplicação encerrada")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, clock: Clock | None = None) -> FastAPI:
+    """Monta a aplicação.
+
+    `clock` é injetável para que o teste possa fixar "agora" sem mexer no
+    relógio do processo. Em produção o default lê o relógio do sistema.
+    """
     settings = settings or get_settings()
 
     app = FastAPI(
@@ -51,7 +58,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc" if settings.docs_enabled else None,
         openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
+    # Objetos sem I/O, construídos uma vez: o custo do argon2 é por operação,
+    # não por instância, e o codec é imutável.
     app.state.settings = settings
+    app.state.clock = clock or Clock(tz=settings.tzinfo)
+    app.state.password_hasher = PasswordHasher.from_settings(settings)
+    app.state.token_codec = TokenCodec.from_settings(settings)
 
     register_exception_handlers(app)
 

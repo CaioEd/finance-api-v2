@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from httpx import AsyncClient
 
-from finance_api.core.errors import (
+from core.errors import (
     ConflictError,
     DomainError,
     ForbiddenError,

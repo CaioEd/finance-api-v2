@@ -1,0 +1,25 @@
+"""Fiação dos repositórios.
+
+Ficam aqui, e não junto das classes, para que `repositories/` não precise
+importar o FastAPI: repositório é SQL, e testá-lo não deveria exigir um
+framework web.
+"""
+
+from __future__ import annotations
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from dependencies.database import get_session
+from repositories.refresh_token_repository import RefreshTokenRepository
+from repositories.user_repository import UserRepository
+
+
+def get_user_repository(session: AsyncSession = Depends(get_session)) -> UserRepository:
+    return UserRepository(session)
+
+
+def get_refresh_token_repository(
+    session: AsyncSession = Depends(get_session),
+) -> RefreshTokenRepository:
+    return RefreshTokenRepository(session)

@@ -1,7 +1,8 @@
 """Endpoints operacionais.
 
 Ficam fora de `/api/v1` de propósito: não são contrato de produto, não são
-versionados e não exigem autenticação. Por isso também não moram em `domains/`.
+versionados e não exigem autenticação. Por isso são montados direto em
+`main.py`, sem passar pelo `api_router`.
 """
 
 from __future__ import annotations
@@ -9,10 +10,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from finance_api import __version__
-from finance_api.core.config import Environment
-from finance_api.core.database import Database
-from finance_api.core.errors import ServiceUnavailableError
+from core.config import Environment
+from core.database import Database
+from core.errors import ServiceUnavailableError
+from version import __version__
 
 router = APIRouter(tags=["health"])
 

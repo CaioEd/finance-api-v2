@@ -59,13 +59,55 @@ class UnprocessableError(DomainError):
 class AuthenticationError(DomainError):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "invalid_credentials"
-    message = "Credenciais inválidas."
+    message = "E-mail ou senha inválidos."
+    # Mensagem única de propósito: distinguir "e-mail não existe" de "senha
+    # errada" entrega a lista de contas cadastradas a quem perguntar.
+
+
+class InvalidTokenError(DomainError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "invalid_token"
+    message = "Token inválido."
+
+
+class TokenExpiredError(DomainError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "token_expired"
+    message = "Token expirado."
+
+
+class InvalidRefreshTokenError(DomainError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "invalid_refresh_token"
+    message = "Refresh token inválido ou expirado."
+
+
+class TokenReuseError(DomainError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "token_reuse_detected"
+    message = "Refresh token já utilizado. Todas as sessões desta linhagem foram encerradas."
 
 
 class ForbiddenError(DomainError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "forbidden"
     message = "Acesso negado."
+
+
+class AccountInactiveError(DomainError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "account_inactive"
+    message = "Conta desativada."
+
+
+class EmailTakenError(ConflictError):
+    code = "email_taken"
+    message = "Já existe uma conta com este e-mail."
+
+
+class UsernameTakenError(ConflictError):
+    code = "username_taken"
+    message = "Este nome de usuário já está em uso."
 
 
 class ServiceUnavailableError(DomainError):

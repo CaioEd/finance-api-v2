@@ -47,13 +47,16 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-local}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Sao_Paulo}
       PYTHONPATH: /app/src
+      # Sem default de propósito: `docker compose up` sem JWT_SECRET_KEY no .env
+      # falha na subida, em vez de subir assinando token com chave conhecida.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?defina JWT_SECRET_KEY no .env}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./src:/app/src:ro
     command:
       - uvicorn
-      - finance_api.main:create_app
+      - main:create_app
       - --factory
       - --host=0.0.0.0
       - --port=8000

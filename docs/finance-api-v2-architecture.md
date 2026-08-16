@@ -13,7 +13,7 @@ Cinco decisões atravessam o documento inteiro. Vale enunciá-las antes porque q
 1. **Bug estrutural se elimina, não se conserta.** Sempre que possível, o redesenho torna a classe do bug *impossível de representar* em vez de corrigir a ocorrência. O saldo com janelas diferentes (problema 2) some porque passa a existir uma única janela por construção, não porque alguém alinhou duas queries.
 2. **Uma responsabilidade, uma camada.** Escopo por usuário é imposto em um lugar só (o repositório). Data "hoje" vem de um lugar só (o `Clock`). Autorização vem de um lugar só (dependência de router).
 3. **Leitura não escreve.** Nenhum `GET` altera estado. Isso mata a tabela `Balance` como cache gravado em leitura.
-4. **Organização por domínio.** Cada domínio é um pacote fechado com seus `endpoints`, `schemas`, `models`, `repositories` e `services`. Rota agregada mora junto do seu domínio, nunca no arquivo de rotas do projeto.
+4. **Organização por camada, um arquivo por recurso.** `api/routes/`, `services/`, `repositories/`, `models/`, `schemas/`, `core/` e `dependencies/`. Dentro de cada camada, cada recurso tem o seu arquivo: nenhum arquivo concentra rotas de recursos diferentes, e endpoint agregado (saldo, relatório) tem o seu próprio arquivo de rotas — que é o que faltava no `urls.py` único do sistema antigo.
 5. **Configuração é ambiente.** Nada de `DEBUG=True` ou CORS aberto no código. Tudo entra por `pydantic-settings`, e a aplicação recusa subir sem as variáveis obrigatórias.
 
 **Convenções adotadas nas suas respostas de escopo:** categorias são tabela global + custom por usuário; fuso é único, configurável por `APP_TIMEZONE`; o `/admin/` do Django é substituído por rotas `/api/v1/admin/*` protegidas por role.
@@ -49,7 +49,7 @@ Esta é a decisão que mais muda o resto do desenho, então vale desenvolver.
 **Compatibilidade de rotas sem duplicar código:** `/incomes` e `/expenses` continuam existindo como **projeções tipadas** da mesma tabela, geradas por uma fábrica de router:
 
 ```python
-# domains/transactions/endpoints.py
+# api/routes/transactions.py
 def build_typed_router(tx_type: TransactionType, prefix: str) -> APIRouter: ...
 
 income_router  = build_typed_router(TransactionType.INCOME,  "/incomes")
@@ -89,7 +89,7 @@ WHERE user_id = :user_id
 - **Por que `VARCHAR` + `CHECK` e não `ENUM` nativo do Postgres:** alterar um `CHECK` é um `ALTER TABLE` simples e reversível no Alembic; `ALTER TYPE ... ADD VALUE` tem restrições transacionais e remover valor exige recriar o tipo e reescrever colunas. O ganho de armazenamento do enum nativo é irrelevante nesta escala. Mesmo critério vale para `transactions.type`.
 - **Um eixo só.** `is_superuser` e `is_staff` desaparecem — dois booleanos e um inteiro descrevendo a mesma coisa é como se perde o controle de quem pode o quê. Fica `role`, mais `is_active` (que é estado da conta, não permissão).
 - **Como isso vira autorização:** uma dependência `require_role(Role.ADMIN)` aplicada no `APIRouter` inteiro do admin, **nunca rota a rota** (repetir é como se esquece — origem dos problemas 4 e 5).
-- **Bootstrap:** o primeiro admin nasce por comando de CLI (`python -m finance_api.cli create-admin`), nunca por registro público. Promoção posterior só por outro admin via `PATCH /api/v1/admin/users/{id}`.
+- **Bootstrap:** o primeiro admin nasce por comando de CLI (`python -m cli create-admin`), nunca por registro público. Promoção posterior só por outro admin via `PATCH /api/v1/admin/users/{id}`.
 - **Trava anti-lockout:** um admin não pode remover o próprio `role`, se desativar nem se deletar (`409`).
 
 ### 1.4 Revogação de refresh token sem SimpleJWT — recomendado
@@ -183,7 +183,7 @@ Sem HTML, sem Jinja, sem framework de admin: as rotas são documentadas no OpenA
 
 ## 2. Árvore de diretórios
 
-Organização **por domínio**, com o esquema de arquivos que você definiu (`endpoints` / `schemas` / `models` / `repositories` / `services`) dentro de cada um. Quando um arquivo crescer demais, ele vira pacote com o mesmo nome — a forma não muda.
+Organização **por camada**, com um arquivo por recurso dentro de cada uma. Quando um arquivo crescer demais, vira pacote com o mesmo nome — a forma não muda.
 
 ```
 finance-api-v2/
@@ -194,53 +194,68 @@ finance-api-v2/
 ├── .env.example                     # todas as variáveis, sem um único segredo real
 ├── alembic/
 │   └── versions/                    # migrations = fonte da verdade do schema (nunca create_all)
-├── src/
-│   └── finance_api/
-│       ├── main.py                  # fábrica create_app(); registra handlers de erro e o router raiz
-│       ├── api.py                   # único ponto que faz include_router; nada de lógica aqui
-│       ├── health.py                # /health e /health/ready — operacional, fora de /api/v1
-│       ├── cli.py                   # comandos operacionais (create-admin, purge-tokens)
-│       │
-│       ├── core/                    # infraestrutura transversal, sem regra de negócio
-│       │   ├── config.py            # Settings (pydantic-settings); app não sobe sem o obrigatório
-│       │   ├── database.py          # async engine + async_sessionmaker + get_session
-│       │   ├── security.py          # argon2 hash/verify, encode/decode de JWT, geração de opacos
-│       │   ├── clock.py             # now_utc(), today(), current_month() no APP_TIMEZONE
-│       │   ├── errors.py            # exceções de domínio + exception handlers → envelope único
-│       │   ├── pagination.py        # PageParams e Page[T] genérico
-│       │   └── dependencies.py      # get_current_user, require_role, fábricas de repositório
-│       │
-│       ├── shared/                  # blocos reusados pelos domínios
-│       │   ├── base_model.py        # DeclarativeBase, UUIDPrimaryKey, TimestampMixin
-│       │   ├── base_repository.py   # OwnedRepository — onde o escopo por usuário é imposto
-│       │   └── enums.py             # Role, TransactionType
-│       │
-│       └── domains/
-│           ├── auth/                # login, refresh, logout, registro
-│           │   ├── endpoints.py     # rotas HTTP; sem SQL, sem regra
-│           │   ├── schemas.py       # Pydantic v2 de entrada/saída — nunca expõe model
-│           │   ├── models.py        # RefreshToken (ORM)
-│           │   ├── repositories.py  # acesso a dados de refresh_tokens
-│           │   └── services.py      # rotação, detecção de reuso, revogação de família
-│           ├── users/
-│           │   ├── endpoints.py     # router (/users/me) + admin_router (/admin/users)
-│           │   ├── schemas.py
-│           │   ├── models.py        # User (com role — sem Profile)
-│           │   ├── repositories.py  # UserRepository (self) + AdminUserRepository (irrestrito)
-│           │   └── services.py
-│           ├── categories/          # mesma estrutura; globais + custom por usuário
-│           ├── transactions/        # Transaction + os routers tipados /incomes e /expenses
-│           ├── balance/             # agregações; SEM models.py — Balance não é tabela
-│           │   ├── endpoints.py     # /balance/month, /balance/monthly, /balance/range
-│           │   ├── schemas.py
-│           │   ├── repositories.py  # SQL de agregação sobre transactions
-│           │   └── services.py      # série mensal, meses vazios, validação de período
-│           └── reports/             # PDF
-│               ├── endpoints.py
-│               ├── schemas.py
-│               ├── services.py      # orquestra: busca dados → chama o builder
-│               ├── pdf_builder.py   # Platypus puro, sem HTTP e sem ORM — unitariamente testável
-│               └── assets/logo.png
+├── src/                             # raiz de import: `from core.config import ...`
+│   ├── main.py                      # fábrica create_app(); registra handlers de erro e os routers
+│   ├── version.py                   # __version__, exposto em /health e no OpenAPI
+│   ├── cli.py                       # comandos operacionais (create-admin, purge-tokens)
+│   │
+│   ├── api/
+│   │   ├── router.py                # único ponto que faz include_router; nada de lógica aqui
+│   │   └── routes/                  # um arquivo por recurso; sem SQL e sem regra de negócio
+│   │       ├── auth.py              # register, login, refresh, logout — o único sem autenticação
+│   │       ├── users.py             # /users/me
+│   │       ├── admin_users.py       # /admin/users, sob require_role(ADMIN)
+│   │       ├── categories.py
+│   │       ├── transactions.py      # /transactions + os routers tipados /incomes e /expenses
+│   │       ├── balance.py           # /balance/month, /balance/monthly, /balance/range
+│   │       ├── reports.py           # PDF do período
+│   │       └── health.py            # /health e /health/ready — fora de /api/v1, sem versão
+│   │
+│   ├── schemas/                     # Pydantic v2 de entrada/saída — nunca expõem model
+│   │   ├── user.py                  # UserOut, UserUpdateIn, e os tipos Email/Username/Password
+│   │   ├── auth.py                  # RegisterIn, LoginIn, TokenPairOut
+│   │   ├── category.py
+│   │   ├── transaction.py
+│   │   └── balance.py
+│   │
+│   ├── models/                      # mapeamento ORM e constraints; um arquivo por tabela
+│   │   ├── user.py                  # User (com role — sem Profile) e o enum Role
+│   │   ├── refresh_token.py
+│   │   ├── category.py
+│   │   └── transaction.py           # Transaction e o enum TransactionType
+│   │
+│   ├── repositories/                # toda a construção de query
+│   │   ├── base.py                  # OwnedRepository — onde o escopo por usuário é imposto
+│   │   ├── user_repository.py
+│   │   ├── refresh_token_repository.py
+│   │   ├── category_repository.py
+│   │   ├── transaction_repository.py
+│   │   └── balance_repository.py    # SQL de agregação; sem tabela própria
+│   │
+│   ├── services/                    # regra de negócio, em Python puro (zero FastAPI)
+│   │   ├── auth_service.py          # rotação, detecção de reuso, revogação de família
+│   │   ├── user_service.py
+│   │   ├── category_service.py
+│   │   ├── transaction_service.py
+│   │   ├── balance_service.py       # série mensal, meses vazios, validação de período
+│   │   └── pdf_builder.py           # Platypus puro, sem HTTP e sem ORM — testável unitariamente
+│   │
+│   ├── core/                        # infraestrutura transversal, sem regra de negócio
+│   │   ├── config.py                # Settings (pydantic-settings); app não sobe sem o obrigatório
+│   │   ├── database.py              # Base declarativa, TimestampMixin, engine e sessionmaker
+│   │   ├── security.py              # argon2 hash/verify, JWT, geração de tokens opacos
+│   │   ├── clock.py                 # Clock de instante injetável: now_utc, today, current_month
+│   │   ├── errors.py                # catálogo de erros + handlers → envelope único
+│   │   └── pagination.py            # PageParams e Page[T] genérico
+│   │
+│   └── dependencies/                # toda a fiação de Depends fica aqui, e só aqui
+│       ├── database.py              # get_session
+│       ├── state.py                 # settings, clock, hasher e codec vindos de app.state
+│       ├── auth.py                  # get_current_user, require_role
+│       ├── repositories.py          # fábricas dos repositórios (é onde o dono é preenchido)
+│       └── services.py              # fábricas dos serviços
+│
+├── assets/logo.png                  # usado pelo PDF; resolvido em runtime, nunca no import
 └── tests/
     ├── conftest.py                  # engine de teste, migrations, sessão isolada, client
     ├── factories.py                 # builders explícitos de dados
@@ -253,14 +268,21 @@ finance-api-v2/
 
 | Camada | Responsabilidade | Nunca faz |
 |---|---|---|
-| `endpoints` | Traduz HTTP ↔ domínio: valida entrada via schema, chama serviço, devolve schema e status. | SQL, regra de negócio, `if role ==` |
+| `api/routes` | Traduz HTTP ↔ domínio: valida entrada via schema, chama serviço, devolve schema e status. | SQL, regra de negócio, `if role ==` |
 | `schemas` | Contrato público de entrada e saída, separado do ORM. | Tocar banco, carregar model |
 | `models` | Mapeamento ORM e constraints do banco. | Regra de negócio, validação de entrada |
-| `repositories` | Toda a construção de query; **impõe o escopo por usuário**. | Decidir regra, levantar `HTTPException` |
+| `repositories` | Toda a construção de query; **impõe o escopo por usuário**. | Decidir regra, conhecer HTTP |
 | `services` | Regra de negócio, orquestração e transação; levanta exceção de domínio. | Conhecer `Request`/`Response` |
-| `core` | Infra transversal: config, sessão, segurança, relógio, erros, paginação. | Conhecer domínio específico |
+| `core` | Infra transversal: config, banco, segurança, relógio, erros, paginação. | Conhecer um recurso específico |
+| `dependencies` | Toda a fiação de `Depends`: sessão, usuário atual, papel, repositórios, serviços. | Conter regra de negócio |
 
-O ponto do problema 16 fica explícito: `/balance/monthly` mora em `domains/balance/endpoints.py`, junto do seu serviço e do seu SQL. `api.py` só faz `include_router`.
+O ponto do problema 16 fica explícito: `/balance/monthly` mora em `api/routes/balance.py`, e `api/router.py` só faz `include_router`. O que existia no Django era um `urls.py` único concentrando os endpoints agregados de todos os módulos; aqui cada recurso tem o seu arquivo.
+
+**`services/` e `repositories/` não importam FastAPI.** É o que a separação de `dependencies/` compra: regra de negócio e SQL são Python puro, testáveis sem framework web. Nenhum `Depends` aparece fora de `dependencies/` e `api/routes/`.
+
+**O custo desta organização, dito de frente:** mexer numa feature toca cinco pastas em vez de uma, e a coesão é por camada, não por assunto. Em troca, cada camada tem uma fronteira única e verificável — e é o que torna possível a regra acima ("nenhum import de FastAPI abaixo de `dependencies/`"), que numa organização por domínio precisaria ser conferida pasta a pasta.
+
+**Não existe pacote `shared/`.** Uma pasta com esse nome atrai tudo o que ninguém sabe onde colocar, e em seis meses é a maior do projeto. Cada peça tem um dono óbvio: infraestrutura vai para `core/`, tipo de domínio vai para o `models/` do recurso que o define (`Role` em `models/user.py`, `TransactionType` em `models/transaction.py`).
 
 ---
 
@@ -565,6 +587,8 @@ Starlette custaria mais do que o alinhamento vale.
 
 `typ` distingue os tipos e impede que um refresh seja aceito como access. Segredo em `JWT_SECRET_KEY`, obrigatório, sem default — a aplicação **não sobe** sem ele.
 
+**Restrição operacional descoberta na implementação:** `iat` e `exp` são validados pela biblioteca de JWT contra o relógio do **sistema**, não contra o `Clock` da aplicação. Um relógio adiantado emite tokens com `iat` no futuro, que a própria validação recusa como *not yet valid*. Consequências: o `Clock` da aplicação não pode ser artificialmente deslocado, e os relógios das máquinas que emitem e validam token precisam estar sincronizados (NTP).
+
 ### 5.2 Dependência de usuário atual
 
 ```python
@@ -594,7 +618,7 @@ def require_role(*roles: Role):
 O escopo **não** é checado nos endpoints. Ele é imposto no repositório, que só existe atrelado a um dono:
 
 ```python
-# shared/base_repository.py
+# repositories/base.py
 class OwnedRepository(Generic[ModelT]):
     model: type[ModelT]
 
@@ -610,10 +634,10 @@ class OwnedRepository(Generic[ModelT]):
 ```
 
 ```python
-# core/dependencies.py — a fábrica é o que garante que o dono sempre é preenchido
-def transaction_repository(
+# dependencies/repositories.py — a fábrica garante que o dono sempre é preenchido
+def get_transaction_repository(
     session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> TransactionRepository:
     return TransactionRepository(session, owner_id=user.id)
 ```
@@ -748,7 +772,7 @@ Como reportlab é síncrono e ligado a CPU, a geração roda em `run_in_threadpo
 | 13 | Sem paginação, filtro ou ordenação | `Page[T]` genérico, `limit`≤100 / `offset`, filtros e `order_by` em toda listagem | §4.3, §4.4 |
 | 14 | Zero testes | Pirâmide unitário/integração, banco real com rollback por teste, matriz de autorização que quebra o build | §6 |
 | 15 | Config hardcoded | `pydantic-settings` obrigatório; `DEBUG`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, segredos e TTLs por env; app não sobe sem o essencial | §0, §5.1 |
-| 16 | Roteamento centralizado demais | Cada domínio expõe seu `endpoints.py` (inclusive os agregados); `api.py` só faz `include_router` | §2 |
+| 16 | Roteamento centralizado demais | Um arquivo por recurso em `api/routes/` (inclusive os agregados); `api/router.py` só faz `include_router` | §2 |
 
 ---
 

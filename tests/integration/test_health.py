@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from finance_api import __version__
+from version import __version__
 
 
 async def test_health_reports_version_and_environment(client: AsyncClient) -> None:

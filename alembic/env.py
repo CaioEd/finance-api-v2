@@ -13,19 +13,25 @@ from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from finance_api.core.config import get_settings
-from finance_api.shared.base_model import Base
+from core.config import get_settings
+from core.database import Base
 
-# Importe aqui os models de cada domínio para que o autogenerate os enxergue.
-# Fase 1+:
-#   from finance_api.domains.users import models as _users_models
+# Importados só para registrar as tabelas no metadata do autogenerate.
+# Model novo em `models/` precisa entrar nesta lista, ou o autogenerate não o vê.
+from models import refresh_token as _refresh_token_model  # noqa: F401
+from models import user as _user_model  # noqa: F401
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Quem chama o Alembic pela linha de comando não passa URL, e ela vem das
+# Settings. Quem chama programaticamente (a suíte de testes) já a definiu — e
+# sobrescrevê-la aqui apontaria as migrations do teste para o banco de
+# desenvolvimento.
+if not config.get_main_option("sqlalchemy.url", None):
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 target_metadata = Base.metadata
 

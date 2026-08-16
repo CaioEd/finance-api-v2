@@ -9,6 +9,9 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "email-validator>=2.2",
+    "pyjwt>=2.9",
+    "argon2-cffi>=23.1",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
@@ -19,7 +22,6 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "httpx>=0.28",
-    "time-machine>=2.15",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
@@ -28,8 +30,11 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# `sources` remove o prefixo src/ na instalação: os módulos ficam no topo
+# (main, api, health, core.*, domains.*), que é como o código se importa.
 [tool.hatch.build.targets.wheel]
-packages = ["src/finance_api"]
+only-include = ["src"]
+sources = ["src"]
 
 # ---------------------------------------------------------------- ruff
 
@@ -41,6 +46,8 @@ src = ["src", "tests"]
 # (.venv, .git, build...) em vez de somar a ela.
 # O documento de arquitetura tem trechos ilustrativos de código; não é fonte.
 extend-exclude = ["docs"]
+# Todo cache de ferramenta em .cache/, para não espalhar pastas na raiz.
+cache-dir = ".cache/ruff"
 
 [tool.ruff.lint]
 select = [
@@ -68,13 +75,26 @@ ignore = [
 "alembic/versions/*" = ["F401"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["finance_api"]
+known-first-party = [
+    "api",
+    "cli",
+    "core",
+    "dependencies",
+    "main",
+    "models",
+    "repositories",
+    "schemas",
+    "services",
+    "version",
+]
 
 # ---------------------------------------------------------------- mypy
 
 [tool.mypy]
 python_version = "3.12"
 files = ["src"]
+mypy_path = "src"
+cache_dir = ".cache/mypy"
 strict = true
 warn_unreachable = true
 show_error_codes = true
@@ -84,6 +104,8 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
+cache_dir = ".cache/pytest"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-q --strict-markers"

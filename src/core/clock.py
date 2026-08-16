@@ -1,8 +1,12 @@
 """Fonte única de "agora".
 
 Toda data de negócio passa por aqui. `date.today()` espalhado pelo código é o
-que torna "mês corrente" impossível de testar e sensível ao fuso do servidor:
-o relógio é injetado, então congelá-lo no teste é trivial.
+que torna "mês corrente" impossível de testar e sensível ao fuso do servidor.
+
+O instante é um parâmetro do relógio (`instant`), não uma leitura global do
+sistema: em produção vale o default, que lê o relógio da máquina; em teste
+passa-se uma função que devolve um instante fixo. Nenhuma mágica de
+congelamento de tempo é necessária.
 
 Convenção do projeto (ver documento de arquitetura, §1.7):
   - instantes (`created_at`, `expires_at`) são sempre UTC;
@@ -12,6 +16,7 @@ Convenção do projeto (ver documento de arquitetura, §1.7):
 from __future__ import annotations
 
 import calendar
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
@@ -35,19 +40,28 @@ def month_range(year: int, month: int) -> MonthRange:
     return MonthRange(first_day=date(year, month, 1), last_day=date(year, month, last))
 
 
+def system_utc_now() -> datetime:
+    """Instante atual do sistema, com timezone, em UTC."""
+    return datetime.now(UTC)
+
+
 @dataclass(frozen=True, slots=True)
 class Clock:
-    """Relógio da aplicação, atrelado a um fuso."""
+    """Relógio da aplicação, atrelado a um fuso.
+
+    `instant` devolve o momento presente em UTC; trocá-lo é como o teste fixa
+    o tempo.
+    """
 
     tz: ZoneInfo
+    instant: Callable[[], datetime] = system_utc_now
 
     def now_utc(self) -> datetime:
-        """Instante atual, sempre com timezone e sempre em UTC."""
-        return datetime.now(UTC)
+        return self.instant()
 
     def today(self) -> date:
-        """Data de hoje no fuso da aplicação."""
-        return datetime.now(self.tz).date()
+        """Data de hoje no fuso da aplicação — que pode não ser a data em UTC."""
+        return self.now_utc().astimezone(self.tz).date()
 
     def current_month(self) -> MonthRange:
         today = self.today()
