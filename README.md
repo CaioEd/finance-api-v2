@@ -2,11 +2,6 @@
 
 API REST de finanças pessoais, multiusuário. Cada pessoa registra receitas e despesas, consulta saldos
 agregados (mês corrente, mês a mês, intervalo de datas) e baixa um PDF com o resumo de um período.
-Todo dado é privado: ninguém enxerga lançamento de ninguém.
-
-O **porquê** de cada decisão de desenho está em
-[`docs/finance-api-v2-architecture.md`](docs/finance-api-v2-architecture.md). Este arquivo é o **como**:
-rodar, navegar e contribuir.
 
 ## Tech stack
 
@@ -203,11 +198,6 @@ src/
 
 Fluxo de uma requisição: `api/routes` → `services` → `repositories` → banco. As dependências são
 montadas em `dependencies/` e injetadas na rota.
-
-**Onde mexer para adicionar um recurso** (ex.: `categories`): `models/category.py`,
-`schemas/category.py`, `repositories/category_repository.py`, `services/category_service.py`,
-`api/routes/categories.py`, mais as fábricas em `dependencies/` e o `include_router` em
-`api/router.py`. Gere a migration e registre o novo model em `alembic/env.py`.
 
 ## Desenvolvimento
 

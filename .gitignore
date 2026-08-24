@@ -2,6 +2,9 @@
 .venv/
 venv/
 
+# Versão do Python fixada pelo pyenv — local da máquina, não do projeto
+.python-version
+
 __pycache__/
 *.py[cod]
 *.egg-info/
