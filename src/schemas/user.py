@@ -71,3 +71,49 @@ class AccountDeleteIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     password: str
+
+
+# --------------------------------------------------------------- administração
+#
+# Contrato das rotas sob `require_role(ADMIN)`. Separado do contrato do próprio
+# perfil de propósito: `role` e `is_active` só existem aqui, e é por isso que
+# `UserUpdateIn` não tem como promover ninguém nem reativar uma conta.
+
+
+class AdminUserCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: Email
+    username: Username
+    password: Password
+    first_name: PersonName = ""
+    last_name: PersonName = ""
+    role: Role = Role.USER
+    is_active: bool = True
+
+
+class AdminUserUpdateIn(BaseModel):
+    """Todos os campos opcionais: é PATCH.
+
+    Senha não entra: trocar a senha de outra pessoa sem conhecer a atual é um
+    fluxo de recuperação, com o seu próprio desenho. Para barrar o acesso de
+    alguém agora, o campo é `is_active`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: Email | None = None
+    username: Username | None = None
+    first_name: PersonName | None = None
+    last_name: PersonName | None = None
+    role: Role | None = None
+    is_active: bool | None = None
+
+
+class UserPageOut(BaseModel):
+    """Página de listagem: `total` é do filtro inteiro, não do que veio nesta."""
+
+    items: list[UserOut]
+    total: int
+    limit: int
+    offset: int

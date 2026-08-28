@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.user import Role, User
 
 DEFAULT_PASSWORD = "senha-bem-comprida"
 
@@ -60,3 +64,31 @@ async def register_user(client: AsyncClient, **overrides: Any) -> RegisteredUser
         access_token=body["access_token"],
         refresh_token=body["refresh_token"],
     )
+
+
+async def promote_to_admin(session: AsyncSession, user: RegisteredUser) -> None:
+    """Promove direto no banco.
+
+    Não existe rota que promova alguém a administrador, e não deveria existir:
+    o primeiro admin nasce do `python -m cli create-admin`. O token já emitido
+    continua valendo porque a autorização lê o papel do banco a cada
+    requisição, não do `role` gravado no access token.
+    """
+    record = await session.get(User, UUID(user.id))
+    if record is None:  # pragma: no cover - só acontece se o registro falhar
+        raise LookupError(f"usuário {user.id} não existe")
+    record.role = Role.ADMIN
+    await session.commit()
+
+
+async def register_admin(
+    client: AsyncClient,
+    session: AsyncSession,
+    *,
+    email: str = "admin@exemplo.com",
+    username: str = "admin",
+    **overrides: Any,
+) -> RegisteredUser:
+    admin = await register_user(client, email=email, username=username, **overrides)
+    await promote_to_admin(session, admin)
+    return admin

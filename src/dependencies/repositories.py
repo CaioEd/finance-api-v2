@@ -11,6 +11,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.database import get_session
+from repositories.admin_user_repository import AdminUserRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.user_repository import UserRepository
 
@@ -23,3 +24,10 @@ def get_refresh_token_repository(
     session: AsyncSession = Depends(get_session),
 ) -> RefreshTokenRepository:
     return RefreshTokenRepository(session)
+
+
+def get_admin_user_repository(
+    session: AsyncSession = Depends(get_session),
+) -> AdminUserRepository:
+    """Repositório irrestrito. Só as rotas sob `require_role(ADMIN)` o pedem."""
+    return AdminUserRepository(session)

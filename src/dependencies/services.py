@@ -16,10 +16,16 @@ from core.clock import Clock
 from core.config import Settings
 from core.security import PasswordHasher, TokenCodec
 from dependencies.database import get_session
-from dependencies.repositories import get_refresh_token_repository, get_user_repository
+from dependencies.repositories import (
+    get_admin_user_repository,
+    get_refresh_token_repository,
+    get_user_repository,
+)
 from dependencies.state import get_app_settings, get_clock, get_password_hasher, get_token_codec
+from repositories.admin_user_repository import AdminUserRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.user_repository import UserRepository
+from services.admin_user_service import AdminUserService
 from services.auth_service import AuthService
 from services.user_service import UserService
 
@@ -51,3 +57,12 @@ def get_user_service(
     clock: Clock = Depends(get_clock),
 ) -> UserService:
     return UserService(session=session, tokens=tokens, hasher=hasher, clock=clock)
+
+
+def get_admin_user_service(
+    session: AsyncSession = Depends(get_session),
+    users: AdminUserRepository = Depends(get_admin_user_repository),
+    hasher: PasswordHasher = Depends(get_password_hasher),
+) -> AdminUserService:
+    """A sessão entra como `Transaction`: o serviço só usa commit e rollback."""
+    return AdminUserService(transaction=session, users=users, hasher=hasher)

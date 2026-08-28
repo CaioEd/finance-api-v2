@@ -1,8 +1,8 @@
 """Rotas de usuário.
 
 Só existe `/users/me`. O CRUD de terceiros — que na versão antiga qualquer
-autenticado conseguia usar para editar e apagar qualquer conta — vai para
-`api/routes/admin_users.py` sob `require_role(ADMIN)`, na fase 6.
+autenticado conseguia usar para editar e apagar qualquer conta — mora em
+`api/routes/admin_users.py`, sob `require_role(ADMIN)`.
 
 A autenticação é declarada no router inteiro, não em cada rota.
 """
