@@ -11,7 +11,10 @@ comentários e os docstrings são em **português** — siga a língua ao escrev
 make install                # cria .venv e instala -e ".[dev]"; refaça sempre que pyproject mudar
 make check                  # lint + typecheck + testes — exatamente o que o CI roda
 make fmt                    # ruff check --fix + ruff format
-make test                   # sobe o db-test e roda a suíte
+make test                   # sobe o db-test e roda a suíte inteira
+make test-unit              # só os unitários; sem banco. Um domínio: make test-unit k=admin
+make test-integration       # só o que exige Postgres
+make coverage               # mede a cobertura e grava .cache/coverage.json
 make up / down / logs       # api + postgres via compose
 make run                    # uvicorn local com reload
 make revision m="mensagem"  # autogenerate + ruff nos arquivos gerados
@@ -35,7 +38,9 @@ Um teste só (o venv precisa estar ativo ou use o caminho completo — no Window
 A suíte exige **Postgres real** (serviço `db-test` do compose, porta 5433, dados em tmpfs) —
 nunca SQLite: o desenho depende de índice parcial, agregação com `FILTER` e `NUMERIC`, e
 nenhum dos três se comporta igual no SQLite. `make test-db` sobe só o banco e espera ficar
-saudável. A URL vem de `TEST_DATABASE_URL` (default embutido em `tests/conftest.py`).
+saudável. A URL vem de `TEST_DATABASE_URL`, cujo default mora em
+`tests/integration/conftest.py` — junto de todos os fixtures que abrem conexão. O conftest raiz não
+pode ter nenhum, sob pena de a suíte unitária voltar a exigir banco.
 
 ## Arquitetura
 
@@ -160,4 +165,16 @@ annotations` no topo de todo módulo, caches de ferramenta em `.cache/`.
 Testes de integração usam `httpx.AsyncClient` com `ASGITransport` contra a app real (o fixture
 `app` entra no `lifespan_context` à mão, senão `app.state.database` não existe). Testes unitários
 não tocam I/O: serviço se testa com repositório *fake* implementando um `Protocol`, não com mock de
-SQLAlchemy.
+SQLAlchemy. Isso é garantido, não combinado: um fixture em `tests/unit/conftest.py`
+transforma qualquer tentativa de conectar no Postgres em falha de teste.
+
+**A cobertura anda junto com o código.** Teste novo ou módulo novo pedem `make coverage` e a
+atualização de `docs/cobertura-de-testes.md` **no mesmo commit** — os três blocos: a tabela de topo,
+a tabela por módulo e as duas listas de lacunas. Lacuna que virou teste sai da lista; código novo
+sem teste entra nela, mesmo que derrube o número. Documento de cobertura desatualizado é pior que
+documento nenhum: ele afirma com precisão numérica uma coisa que deixou de ser verdade.
+
+A medição depende de `concurrency = ["thread", "greenlet"]` no `pyproject.toml`. A ponte async do
+SQLAlchemy executa dentro de um greenlet e, sem essa declaração, o rastreador perde tudo que roda
+depois de um `await` no banco — o `auth_service` aparecia com 51% em vez de 91%. Número que despenca
+sem explicação é este problema, não teste faltando.

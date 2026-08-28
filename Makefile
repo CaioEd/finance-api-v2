@@ -47,7 +47,7 @@ endif
 # um único nome resolve nos três sistemas, e é a única forma de o pip conseguir
 # atualizar a si mesmo no Windows (o pip.exe está aberto enquanto roda).
 
-.PHONY: help install up down logs test test-unit test-integration test-db lint fmt typecheck check seed migrate revision run clean
+.PHONY: help install up down logs test test-unit test-integration test-db coverage lint fmt typecheck check seed migrate revision run clean
 
 help:  ## Lista os alvos disponíveis
 	@$(PYTHON) -c "import os,re; from pathlib import Path; c,r = ('\033[36m','\033[0m') if os.environ.get('TERM') else ('',''); [print('  ' + c + m[1].ljust(17) + r + ' ' + m[2]) for l in Path('$(firstword $(MAKEFILE_LIST))').read_text(encoding='utf-8').splitlines() for m in [re.match(r'([A-Za-z_-]+):.*?## (.*)', l)] if m]"
@@ -77,6 +77,9 @@ test-unit:  ## Só os unitários: sem Docker, sem banco. Um domínio: make test-
 
 test-integration: test-db  ## Roda só o que exige Postgres
 	$(PY) -m pytest tests/integration
+
+coverage: test-db  ## Mede a cobertura; atualize docs/cobertura-de-testes.md com o resultado
+	$(PY) -m pytest --cov --cov-report=term-missing --cov-report=json:.cache/coverage.json
 
 lint:  ## ruff check + format --check
 	$(PY) -m ruff check .
