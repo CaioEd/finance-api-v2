@@ -18,7 +18,13 @@ make revision m="mensagem"  # autogenerate + ruff nos arquivos gerados
 make migrate                # alembic upgrade head
 ```
 
-Um teste só (o venv precisa estar ativo ou use o caminho completo):
+Os alvos funcionam em Linux, macOS e Windows — nenhum depende de utilitário de shell Unix, e
+`$(PY)` resolve `bin/` ou `Scripts/` conforme o venv que existe. Receita nova segue a regra: só
+`docker ...` ou `$(PY) -m <módulo>`; nada de `rm`, `find`, `grep` ou comentário `#` dentro da receita
+(cmd.exe não conhece nenhum dos quatro).
+
+Um teste só (o venv precisa estar ativo ou use o caminho completo — no Windows,
+`.venv\Scripts\pytest`):
 
 ```bash
 .venv/bin/pytest tests/unit/test_clock.py::test_current_month_follows_the_local_date
