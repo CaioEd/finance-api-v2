@@ -4,14 +4,15 @@ API REST de finanças pessoais, multiusuário. Cada pessoa registra receitas e d
 saldos agregados (mês corrente, mês a mês, intervalo de datas) e baixa um PDF com o resumo de um
 período.
 
-Hoje funcionam identidade e sessão: registro, login, refresh rotativo, perfil próprio e o CRUD
-administrativo de usuários. Categorias, transações, saldos e o relatório em PDF ainda não existem.
+Hoje funcionam identidade e sessão (registro, login, refresh rotativo, perfil próprio e o CRUD
+administrativo de usuários) e as categorias. Transações, saldos e o relatório em PDF ainda não
+existem.
 
 | Fase | Escopo | Situação |
 |---|---|---|
 | 0 | Esqueleto: config, banco, erros, relógio, health, Alembic, Docker, CI | concluída |
 | 1 | Identidade e sessão: `users`, `refresh_tokens`, auth, `/users/me`, CLI de admin | concluída |
-| 2 | Categorias (globais + custom por usuário) | pendente |
+| 2 | Categorias (globais + custom por usuário) | concluída |
 | 3 | Transações (receitas e despesas numa entidade só) | pendente |
 | 4 | Saldos: mês corrente, mês a mês, intervalo | pendente |
 | 5 | Relatório em PDF | pendente |
@@ -103,6 +104,7 @@ src/
 │   └── routes/              um arquivo por recurso: traduz HTTP ↔ domínio
 │       ├── auth.py          o único arquivo de rotas sem autenticação
 │       ├── users.py         perfil próprio (/users/me)
+│       ├── categories.py    categorias do sistema e do usuário
 │       ├── admin_users.py   CRUD de usuários, sob require_role(ADMIN)
 │       └── health.py
 │
@@ -138,6 +140,11 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | PATCH | `/users/me` | Atualiza o próprio perfil | autenticado |
 | POST | `/users/me/password` | Troca a senha e encerra todas as sessões | autenticado |
 | DELETE | `/users/me` | Exclui a conta e tudo que pende dela | autenticado |
+| GET | `/categories` | Lista as do sistema e as próprias (`?kind=income\|expense`) | autenticado |
+| POST | `/categories` | Cria uma categoria própria | autenticado |
+| GET | `/categories/{id}` | Detalha uma categoria visível | autenticado |
+| PATCH | `/categories/{id}` | Renomeia ou troca o tipo | dono; global só admin |
+| DELETE | `/categories/{id}` | Exclui a categoria | dono; global só admin |
 | GET | `/admin/users` | Lista usuários, com filtro e paginação | admin |
 | POST | `/admin/users` | Cria usuário, com papel e estado à escolha | admin |
 | PATCH | `/admin/users/{user_id}` | Atualiza usuário, inclusive papel e `is_active` | admin |
@@ -154,9 +161,15 @@ vive em `core/errors.py`:
 ### Decisões que quebram se você fizer diferente
 
 - **Autenticação se declara no router inteiro**, nunca rota a rota — assim esquecer *fecha* a rota
-  em vez de abri-la. Autorização por papel idem, com `require_role(...)`.
+  em vez de abri-la. Autorização por papel idem, com `require_role(...)`. Exceção única e declarada:
+  quem pode alterar uma categoria depende da *linha*, não da rota (a mesma serve a global e a do
+  usuário), e a decisão mora em `CategoryService._mutable_or_fail`.
 - **Recurso de outro usuário responde `404`**, não `403`: `403` confirmaria que ele existe. O escopo
   por dono é imposto no repositório, não no endpoint.
+- **Categoria com `user_id IS NULL` é do sistema:** todo mundo enxerga, só o `admin` altera. A
+  unicidade do nome sai de dois índices parciais sobre `lower(name)` — num `UNIQUE` do Postgres
+  `NULL` é distinto de `NULL`, e a global "Moradia" poderia repetir à vontade. As 16 categorias
+  padrão nascem na própria migration, que é dado de referência do produto e não `seed-dev`.
 - **Nada de `app` de módulo.** O servidor usa `uvicorn main:create_app --factory`; importar um
   módulo não pode abrir conexão nem exigir configuração.
 - **`src/` é a raiz de import**, não um pacote: escreve-se `from core.config import ...`.

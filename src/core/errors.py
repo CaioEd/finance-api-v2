@@ -122,6 +122,11 @@ class UsernameTakenError(ConflictError):
     message = "Este nome de usuário já está em uso."
 
 
+class CategoryNameTakenError(ConflictError):
+    code = "category_name_taken"
+    message = "Já existe uma categoria com este nome."
+
+
 class ServiceUnavailableError(DomainError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "service_unavailable"

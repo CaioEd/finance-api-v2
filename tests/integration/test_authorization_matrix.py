@@ -18,6 +18,8 @@ Por isso são duas coisas:
 
 from __future__ import annotations
 
+import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,7 +28,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import register_admin, register_user
+from tests.factories import RegisteredUser, register_admin, register_user
 
 ANONYMOUS = "anônimo"
 OWNER = "dono"
@@ -47,27 +49,59 @@ NOBODY = "00000000-0000-0000-0000-000000000000"
 UNVERSIONED_ROUTES_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json")
 
 
+PATH_PARAMETER = re.compile(r"\{[^}]+\}")
+
+type Setup = Callable[[AsyncClient, RegisteredUser], Awaitable[str]]
+
+
 @dataclass(frozen=True, slots=True)
 class ProtectedRoute:
     method: str
     path: str
+    """O template, como o OpenAPI o registra — é ele que a completude compara."""
+
     body: dict[str, Any] | None = None
+    setup: Setup | None = None
+    """Rota com parâmetro no caminho: cria o recurso e devolve o caminho concreto."""
 
     @property
     def key(self) -> tuple[str, str]:
         return (self.method, self.path)
 
-    def url(self, user_id: str = NOBODY) -> str:
+    def url(self, target_id: str = NOBODY) -> str:
         """O `path` guarda o molde do OpenAPI; a chamada precisa de um id real.
 
         Sem um id, `/users/{user_id}` viraria `/users/`, e o FastAPI responderia
         307 para a rota de listagem — o teste passaria a medir o redirecionamento
-        em vez da autorização.
+        em vez da autorização. O default basta a quem decide a autorização antes
+        de o alvo importar: sem token, o id nunca chega a ser consultado.
+
+        A substituição é por expressão regular, e não `str.format`, porque o
+        nome do parâmetro muda de rota para rota (`user_id`, `category_id`) e
+        um `format` estoura em todo nome que não fosse o esperado.
         """
-        return self.path.format(user_id=user_id)
+        return PATH_PARAMETER.sub(target_id, self.path)
+
+    async def owner_path(self, client: AsyncClient, user: RegisteredUser) -> str:
+        """O caminho do recurso do próprio usuário, criando-o antes se preciso.
+
+        Categoria não se alcança por um id qualquer: o dono precisa ter criado a
+        dele, senão o teste do dono mediria um 404 em vez da autorização.
+        """
+        if self.setup is None:
+            return self.url()
+        return await self.setup(client, user)
 
     def __str__(self) -> str:
         return f"{self.method} {self.path}"
+
+
+async def a_category_of(client: AsyncClient, user: RegisteredUser) -> str:
+    response = await client.post(
+        "/api/v1/categories", headers=user.auth, json={"name": "Padaria", "kind": "expense"}
+    )
+    response.raise_for_status()
+    return f"/api/v1/categories/{response.json()['id']}"
 
 
 PROTECTED_ROUTES = [
@@ -79,6 +113,16 @@ PROTECTED_ROUTES = [
         body={"current_password": "senha-bem-comprida", "new_password": "outra-senha-longa"},
     ),
     ProtectedRoute("DELETE", "/api/v1/users/me", body={"password": "senha-bem-comprida"}),
+    ProtectedRoute("GET", "/api/v1/categories"),
+    ProtectedRoute("POST", "/api/v1/categories", body={"name": "Padaria", "kind": "expense"}),
+    ProtectedRoute("GET", "/api/v1/categories/{category_id}", setup=a_category_of),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/categories/{category_id}",
+        body={"name": "Padaria e mercado"},
+        setup=a_category_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/categories/{category_id}", setup=a_category_of),
 ]
 
 # Autenticar não basta: estas exigem o papel de administrador.
@@ -124,10 +168,13 @@ async def test_protected_route_accepts_the_owner(
     client: AsyncClient, route: ProtectedRoute
 ) -> None:
     user = await register_user(client)
+    path = await route.owner_path(client, user)
 
-    response = await client.request(route.method, route.url(), headers=user.auth, json=route.body)
+    response = await client.request(route.method, path, headers=user.auth, json=route.body)
 
-    assert response.status_code in {200, 204}, f"{route} recusou o próprio dono"
+    assert response.status_code in {200, 201, 204}, (
+        f"{route} recusou o próprio dono: {response.status_code} {response.text}"
+    )
 
 
 @pytest.mark.parametrize("route", ADMIN_ROUTES, ids=str)
