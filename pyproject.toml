@@ -21,6 +21,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
@@ -111,4 +112,24 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = "-q --strict-markers"
 markers = [
     "integration: exige um Postgres real (serviço db-test)",
+]
+
+# ---------------------------------------------------------------- coverage
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+data_file = ".cache/coverage"
+# A ponte async do SQLAlchemy roda dentro de um greenlet, e sem declarar isso
+# o rastreador perde tudo que executa depois de um await no banco: o relatório
+# acusava 51% no auth_service, que os testes cobrem de ponta a ponta.
+concurrency = ["thread", "greenlet"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+    # Corpo de método de Protocol: é declaração de contrato, não código que roda.
+    "^\\s*\\.\\.\\.$",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
 ]

@@ -14,7 +14,7 @@ from uuid import uuid4
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import promote_to_admin, register_user
+from tests.factories import register_admin, register_user
 
 CATEGORIES = "/api/v1/categories"
 
@@ -80,8 +80,7 @@ async def test_a_system_category_is_read_only_for_a_regular_user(client: AsyncCl
 async def test_an_admin_renames_a_system_category_for_everyone(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    admin = await register_user(client)
-    await promote_to_admin(db_session, admin)
+    admin = await register_admin(client, db_session)
     global_id = next(
         category["id"]
         for category in (await client.get(CATEGORIES, headers=admin.auth)).json()
@@ -105,8 +104,7 @@ async def test_an_admin_renames_a_system_category_for_everyone(
 async def test_an_admin_deletes_a_system_category(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    admin = await register_user(client)
-    await promote_to_admin(db_session, admin)
+    admin = await register_admin(client, db_session)
     listed = (await client.get(CATEGORIES, headers=admin.auth)).json()
     global_id = listed[0]["id"]
 
@@ -121,8 +119,7 @@ async def test_an_admin_cannot_repeat_an_existing_system_name(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     """O índice parcial das globais vale para o admin como para qualquer um."""
-    admin = await register_user(client)
-    await promote_to_admin(db_session, admin)
+    admin = await register_admin(client, db_session)
     listed = (await client.get(CATEGORIES, headers=admin.auth)).json()
     moradia = next(category for category in listed if category["name"] == "Moradia")
     alimentacao = next(category for category in listed if category["name"] == "Alimentação")
@@ -140,8 +137,7 @@ async def test_an_admin_still_cannot_reach_a_category_of_another_user(
 ) -> None:
     """Ser admin dá a lista global, não a lista privada de ninguém — isso é a fase 6."""
     ana = await register_user(client)
-    admin = await register_user(client, email="chefe@exemplo.com", username="chefe")
-    await promote_to_admin(db_session, admin)
+    admin = await register_admin(client, db_session, email="chefe@exemplo.com", username="chefe")
     da_ana = await create_category(client, ana.auth, name="Terapia")
 
     read = await client.get(f"{CATEGORIES}/{da_ana['id']}", headers=admin.auth)

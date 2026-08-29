@@ -67,16 +67,28 @@ async def register_user(client: AsyncClient, **overrides: Any) -> RegisteredUser
 
 
 async def promote_to_admin(session: AsyncSession, user: RegisteredUser) -> None:
-    """Dá o papel de admin a quem já se registrou.
+    """Promove direto no banco.
 
-    Não existe endpoint que promova ninguém — quem cria administrador é a linha
-    de comando (`cli.create_admin`), e é pelo model que ela também faz isso.
-
-    O token emitido no registro continua valendo: `get_current_user` carrega o
-    usuário do banco a cada requisição, então o papel que vale é o da linha, não
-    o que estava no token quando ele foi assinado.
+    Não existe rota que promova alguém a administrador, e não deveria existir:
+    o primeiro admin nasce do `python -m cli create-admin`. O token já emitido
+    continua valendo porque a autorização lê o papel do banco a cada
+    requisição, não do `role` gravado no access token.
     """
-    row = await session.get(User, UUID(user.id))
-    assert row is not None, "usuário registrado não encontrado no banco"
-    row.role = Role.ADMIN
+    record = await session.get(User, UUID(user.id))
+    if record is None:  # pragma: no cover - só acontece se o registro falhar
+        raise LookupError(f"usuário {user.id} não existe")
+    record.role = Role.ADMIN
     await session.commit()
+
+
+async def register_admin(
+    client: AsyncClient,
+    session: AsyncSession,
+    *,
+    email: str = "admin@exemplo.com",
+    username: str = "admin",
+    **overrides: Any,
+) -> RegisteredUser:
+    admin = await register_user(client, email=email, username=username, **overrides)
+    await promote_to_admin(session, admin)
+    return admin

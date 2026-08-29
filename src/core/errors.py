@@ -100,6 +100,18 @@ class AccountInactiveError(DomainError):
     message = "Conta desativada."
 
 
+class UserNotFoundError(NotFoundError):
+    code = "user_not_found"
+    message = "Usuário não encontrado."
+
+
+class SelfTargetError(ForbiddenError):
+    code = "self_target_forbidden"
+    message = "Use os endpoints de /users/me para alterar ou excluir a própria conta."
+    # A administração não age sobre a conta de quem administra: é o que impede o
+    # último admin de se rebaixar ou se excluir e deixar o sistema sem ninguém.
+
+
 class EmailTakenError(ConflictError):
     code = "email_taken"
     message = "Já existe uma conta com este e-mail."

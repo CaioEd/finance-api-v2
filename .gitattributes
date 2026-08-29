@@ -1,0 +1,5 @@
+# Quem clona no Windows recebe CRLF por padrão, e aí duas coisas quebram: o
+# `docker/entrypoint.sh` não sobe (o shebang vira `/bin/sh\r`) e o make do
+# MSYS/Git Bash lê o `\r` como parte do comando da receita.
+# Texto vai e volta com LF nos três sistemas; binário o git detecta sozinho.
+* text=auto eol=lf
