@@ -18,6 +18,7 @@ from core.database import Base
 
 # Importados só para registrar as tabelas no metadata do autogenerate.
 # Model novo em `models/` precisa entrar nesta lista, ou o autogenerate não o vê.
+from models import category as _category_model  # noqa: F401
 from models import refresh_token as _refresh_token_model  # noqa: F401
 from models import user as _user_model  # noqa: F401
 

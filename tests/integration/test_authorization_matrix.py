@@ -15,6 +15,8 @@ Por isso são dois testes:
 
 from __future__ import annotations
 
+import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,7 +24,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-from tests.factories import register_user
+from tests.factories import RegisteredUser, register_user
 
 ANONYMOUS = "anônimo"
 OWNER = "dono"
@@ -39,18 +41,46 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
 UNVERSIONED_ROUTES_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json")
 
 
+PATH_PARAMETER = re.compile(r"\{[^}]+\}")
+NONEXISTENT_ID = "00000000-0000-0000-0000-000000000000"
+
+type Setup = Callable[[AsyncClient, RegisteredUser], Awaitable[str]]
+
+
 @dataclass(frozen=True, slots=True)
 class ProtectedRoute:
     method: str
     path: str
+    """O template, como o OpenAPI o registra — é ele que a completude compara."""
+
     body: dict[str, Any] | None = None
+    setup: Setup | None = None
+    """Rota com parâmetro no caminho: cria o recurso e devolve o caminho concreto."""
 
     @property
     def key(self) -> tuple[str, str]:
         return (self.method, self.path)
 
+    @property
+    def unauthenticated_path(self) -> str:
+        """Um id que não existe basta: a autenticação é conferida antes dele."""
+        return PATH_PARAMETER.sub(NONEXISTENT_ID, self.path)
+
+    async def owner_path(self, client: AsyncClient, user: RegisteredUser) -> str:
+        if self.setup is None:
+            return self.path
+        return await self.setup(client, user)
+
     def __str__(self) -> str:
         return f"{self.method} {self.path}"
+
+
+async def a_category_of(client: AsyncClient, user: RegisteredUser) -> str:
+    response = await client.post(
+        "/api/v1/categories", headers=user.auth, json={"name": "Padaria", "kind": "expense"}
+    )
+    response.raise_for_status()
+    return f"/api/v1/categories/{response.json()['id']}"
 
 
 PROTECTED_ROUTES = [
@@ -62,6 +92,16 @@ PROTECTED_ROUTES = [
         body={"current_password": "senha-bem-comprida", "new_password": "outra-senha-longa"},
     ),
     ProtectedRoute("DELETE", "/api/v1/users/me", body={"password": "senha-bem-comprida"}),
+    ProtectedRoute("GET", "/api/v1/categories"),
+    ProtectedRoute("POST", "/api/v1/categories", body={"name": "Padaria", "kind": "expense"}),
+    ProtectedRoute("GET", "/api/v1/categories/{category_id}", setup=a_category_of),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/categories/{category_id}",
+        body={"name": "Padaria e mercado"},
+        setup=a_category_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/categories/{category_id}", setup=a_category_of),
 ]
 
 
@@ -69,7 +109,7 @@ PROTECTED_ROUTES = [
 async def test_protected_route_rejects_anonymous(
     client: AsyncClient, route: ProtectedRoute
 ) -> None:
-    response = await client.request(route.method, route.path, json=route.body)
+    response = await client.request(route.method, route.unauthenticated_path, json=route.body)
 
     assert response.status_code == 401, f"{route} respondeu {response.status_code} sem token"
     assert response.json()["error"]["code"] in {"invalid_token", "token_expired"}
@@ -81,7 +121,9 @@ async def test_protected_route_rejects_a_garbage_token(
 ) -> None:
     headers = {"Authorization": "Bearer nao-e-um-token"}
 
-    response = await client.request(route.method, route.path, headers=headers, json=route.body)
+    response = await client.request(
+        route.method, route.unauthenticated_path, headers=headers, json=route.body
+    )
 
     assert response.status_code == 401
 
@@ -91,10 +133,13 @@ async def test_protected_route_accepts_the_owner(
     client: AsyncClient, route: ProtectedRoute
 ) -> None:
     user = await register_user(client)
+    path = await route.owner_path(client, user)
 
-    response = await client.request(route.method, route.path, headers=user.auth, json=route.body)
+    response = await client.request(route.method, path, headers=user.auth, json=route.body)
 
-    assert response.status_code in {200, 204}, f"{route} recusou o próprio dono"
+    assert response.status_code in {200, 201, 204}, (
+        f"{route} recusou o próprio dono: {response.status_code} {response.text}"
+    )
 
 
 async def test_one_user_never_reaches_another(client: AsyncClient) -> None:

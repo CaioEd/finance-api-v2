@@ -16,11 +16,17 @@ from core.clock import Clock
 from core.config import Settings
 from core.security import PasswordHasher, TokenCodec
 from dependencies.database import get_session
-from dependencies.repositories import get_refresh_token_repository, get_user_repository
+from dependencies.repositories import (
+    get_category_repository,
+    get_refresh_token_repository,
+    get_user_repository,
+)
 from dependencies.state import get_app_settings, get_clock, get_password_hasher, get_token_codec
+from repositories.category_repository import CategoryRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.user_repository import UserRepository
 from services.auth_service import AuthService
+from services.category_service import CategoryService
 from services.user_service import UserService
 
 
@@ -42,6 +48,13 @@ def get_auth_service(
         clock=clock,
         refresh_ttl=timedelta(days=settings.refresh_token_ttl_days),
     )
+
+
+def get_category_service(
+    session: AsyncSession = Depends(get_session),
+    categories: CategoryRepository = Depends(get_category_repository),
+) -> CategoryService:
+    return CategoryService(session=session, categories=categories)
 
 
 def get_user_service(

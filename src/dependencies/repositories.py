@@ -11,12 +11,17 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.database import get_session
+from repositories.category_repository import CategoryRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.user_repository import UserRepository
 
 
 def get_user_repository(session: AsyncSession = Depends(get_session)) -> UserRepository:
     return UserRepository(session)
+
+
+def get_category_repository(session: AsyncSession = Depends(get_session)) -> CategoryRepository:
+    return CategoryRepository(session)
 
 
 def get_refresh_token_repository(

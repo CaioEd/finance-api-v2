@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.user import Role, User
 
 DEFAULT_PASSWORD = "senha-bem-comprida"
 
@@ -60,3 +64,19 @@ async def register_user(client: AsyncClient, **overrides: Any) -> RegisteredUser
         access_token=body["access_token"],
         refresh_token=body["refresh_token"],
     )
+
+
+async def promote_to_admin(session: AsyncSession, user: RegisteredUser) -> None:
+    """Dá o papel de admin a quem já se registrou.
+
+    Não existe endpoint que promova ninguém — quem cria administrador é a linha
+    de comando (`cli.create_admin`), e é pelo model que ela também faz isso.
+
+    O token emitido no registro continua valendo: `get_current_user` carrega o
+    usuário do banco a cada requisição, então o papel que vale é o da linha, não
+    o que estava no token quando ele foi assinado.
+    """
+    row = await session.get(User, UUID(user.id))
+    assert row is not None, "usuário registrado não encontrado no banco"
+    row.role = Role.ADMIN
+    await session.commit()

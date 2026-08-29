@@ -107,9 +107,35 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | PATCH | `/users/me` | Atualiza o próprio perfil | sim |
 | POST | `/users/me/password` | Troca a senha e encerra todas as sessões | sim |
 | DELETE | `/users/me` | Exclui a conta e tudo que pende dela | sim |
+| GET | `/categories` | Lista as do sistema e as do próprio usuário (`?kind=income\|expense`) | sim |
+| POST | `/categories` | Cria uma categoria do próprio usuário | sim |
+| GET | `/categories/{id}` | Detalha uma categoria visível | sim |
+| PATCH | `/categories/{id}` | Renomeia ou troca o tipo (própria; global só `admin`) | sim |
+| DELETE | `/categories/{id}` | Exclui uma categoria (própria; global só `admin`) | sim |
 | GET | `/health`, `/health/ready` | Liveness e readiness (fora de `/api/v1`) | — |
 
-Categorias, transações, saldos e o relatório em PDF ainda não existem — ver [Roadmap](#roadmap).
+Transações, saldos e o relatório em PDF ainda não existem — ver [Roadmap](#roadmap).
+
+### Categorias
+
+Uma tabela só, dois donos possíveis:
+
+- **do sistema** (`user_id IS NULL`): as 16 que a migration insere — 6 de receita, 10 de despesa.
+  Todo mundo enxerga; **só o `admin` edita ou exclui** (para os demais, `403`). São dado de
+  referência do produto, por isso nascem na migration e não no `seed-dev`, que só roda em
+  `local`/`test`.
+- **do usuário**: visíveis só para quem as criou. A categoria de outra pessoa não aparece na
+  listagem e responde `404` pelo id — nunca `403`, que confirmaria a existência dela. Vale também
+  para o `admin`: gerir a lista global não é enxergar a lista privada de ninguém (rotas
+  administrativas sobre dados de terceiros são a fase 6).
+
+O nome é único por dono e por tipo, **ignorando a caixa** ("Mercado" e "mercado" são a mesma coisa),
+o que dois índices parciais impõem: um para as globais, outro para as do usuário. Um `UNIQUE
+(user_id, name, kind)` simples não serviria — para o Postgres, `NULL` é distinto de `NULL`, e a
+categoria global "Moradia" poderia ser cadastrada quantas vezes se quisesse.
+
+Nomes diferentes só na caixa ou no espaço são o mesmo nome: a entrada é normalizada (pontas e
+espaços internos colapsados) preservando a caixa que a pessoa digitou.
 
 ### Tokens
 
@@ -128,7 +154,8 @@ Toda resposta de erro usa o mesmo envelope — não existe parser por endpoint:
 
 Códigos em uso: `invalid_request`, `invalid_credentials`, `invalid_token`, `token_expired`,
 `invalid_refresh_token`, `token_reuse_detected`, `forbidden`, `account_inactive`, `not_found`,
-`method_not_allowed`, `conflict`, `email_taken`, `username_taken`, `validation_error`,
+`method_not_allowed`, `conflict`, `email_taken`, `username_taken`, `category_name_taken`,
+`validation_error`,
 `service_unavailable`, `http_error`, `internal_error`. O catálogo completo vive em `core/errors.py`.
 
 Uma exceção, deliberada: `Host` não permitido é rejeitado pelo middleware antes do roteamento e
@@ -174,6 +201,7 @@ src/
 │   └── routes/              um arquivo por recurso: traduz HTTP ↔ domínio
 │       ├── auth.py          o único arquivo de rotas sem autenticação
 │       ├── users.py
+│       ├── categories.py
 │       └── health.py
 │
 ├── schemas/                 Pydantic v2 de entrada/saída; nunca expõem o model
@@ -255,7 +283,9 @@ Coisas que quebram se você fizer diferente:
 - **`services/` e `repositories/` não importam FastAPI.** Todo `Depends` mora em `dependencies/` ou
   em `api/routes/`.
 - **Autenticação se declara no router inteiro**, nunca rota a rota — assim esquecer *fecha* a rota em
-  vez de abri-la.
+  vez de abri-la. A autorização por papel segue a mesma regra (`require_role`), com uma exceção
+  declarada: quem pode alterar uma categoria depende da *linha*, não da rota, e a decisão mora em
+  `CategoryService._mutable_or_fail`.
 - **Datas:** competência é `date` no fuso da aplicação, instantes são `TIMESTAMPTZ` em UTC, e "hoje"
   vem sempre de `core.clock.Clock` — nunca de `date.today()`.
 - **Dinheiro é `Decimal`** de ponta a ponta, `NUMERIC(14,2)` no banco, string no JSON. Nunca `float`.
@@ -269,7 +299,7 @@ Coisas que quebram se você fizer diferente:
 |---|---|---|
 | 0 | Esqueleto: config, banco, erros, relógio, health, Alembic, Docker, CI | concluída |
 | 1 | Identidade e sessão: `users`, `refresh_tokens`, auth, `/users/me`, CLI de admin | concluída |
-| 2 | Categorias (globais + custom por usuário) | pendente |
+| 2 | Categorias (globais + custom por usuário) | concluída |
 | 3 | Transações (receitas e despesas numa entidade só) | pendente |
 | 4 | Saldos: mês corrente, mês a mês, intervalo | pendente |
 | 5 | Relatório em PDF | pendente |
