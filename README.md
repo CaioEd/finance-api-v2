@@ -45,49 +45,88 @@ seu Python não atende por `python3` (Unix) ou `py` (Windows), passe o nome:
 
 ## Como instalar e rodar
 
-```bash
-cp .env.example .env
-openssl rand -base64 48          # cole o resultado em JWT_SECRET_KEY no .env
+Três formas de subir, e você escolhe pela que quer depurar. Nenhuma tem passo de preparação: o
+`.env` — com uma `JWT_SECRET_KEY` gerada na hora — e o `.venv` nascem sozinhos no primeiro alvo que
+precisar deles.
 
-make up                          # constrói e sobe api + postgres
+| Comando | O que sobe | Quando usar |
+|---|---|---|
+| `make up` | banco + API, os dois no Docker | rodar a aplicação inteira |
+| `make db` | só o Postgres, em `localhost:5432` | apontar outro processo para o banco |
+| `make api` | só a API, na sua máquina, com reload | depurar com breakpoint |
+
+```bash
+make up                          # constrói, migra, semeia e espera ficar saudável
 curl localhost:8000/health/ready
 # {"status":"ok","database":"ok"}
 ```
 
+`make up` só devolve o prompt depois que o healthcheck passa: terminou bem, a API está respondendo.
+`make logs` segue o log; `make down` derruba os containers e preserva o volume do banco.
+
 Documentação interativa em **http://localhost:8000/docs** (e `/redoc`, `/openapi.json`).
 
-Em `ENVIRONMENT=local` ou `test`, o container aplica as migrations e semeia a conta de
+**`make api`** roda o uvicorn no Python da sua máquina contra o banco do Docker — é o caminho para
+depurar com breakpoint. Continua sendo um comando só porque ele sobe o banco e aplica as migrations
+antes de subir o servidor:
+
+```bash
+make api                         # equivale a: make db + make migrate + uvicorn --reload
+```
+
+Em `ENVIRONMENT=local` ou `test`, o container da API aplica as migrations e semeia a conta de
 desenvolvimento sozinho na subida. Em staging e produção não faz nem uma coisa nem outra: migration
 é passo deliberado, não efeito colateral de subir um container.
 
-**Rodando na máquina**, em vez do container — útil para depurar com breakpoint:
+### Migrations
+
+O schema vem sempre do Alembic — `create_all` não existe no projeto, nem em teste. Os quatro
+comandos rodam no Python da sua máquina contra o banco publicado em `localhost:5432`, e todos sobem
+o banco antes, se ele não estiver de pé:
 
 ```bash
-make install                     # cria .venv e instala em modo editável com as deps de dev
-docker compose up -d db
-make migrate
-make run                         # uvicorn com reload em http://localhost:8000
+make migrate                     # aplica as pendentes
+make migrate-status              # revisão aplicada no banco e a mais recente do repositório
+make migrate-down                # desfaz a última
+make revision m="cria tabela transactions"
 ```
 
-**Conta de desenvolvimento**, recriada a cada subida: `admin@exemplo.com` / `123456`, papel `admin`.
-Configurável por `DEV_ADMIN_*` no `.env`, reposta na mão com `make seed`. O comando **recusa rodar**
-fora de `local`/`test` — a trava está dentro dele (`cli.refuse_outside_dev`), não no script que o
-chama.
+`make revision` aplica o que falta **antes** de gerar: fora do head, o autogenerate escreveria no
+arquivo novo as migrations que você ainda não aplicou. Depois de gerar, formata e passa o ruff nos
+arquivos — o lint do CI não perdoa a saída crua do alembic. Sem `m`, o comando recusa em vez de
+gerar um arquivo sem nome. Model novo precisa ser importado em `alembic/env.py`, ou o autogenerate
+não o enxerga.
+
+### Dependências
+
+`make install` cria o `.venv` e instala o projeto em modo editável com as dependências de dev. Você
+raramente precisa chamá-lo: todo alvo que usa o venv o reconstrói sozinho quando o `pyproject.toml`
+muda. A marca é `.venv/.install-stamp`, e é o `pyproject` que a invalida — mexeu na lista de
+dependências, o próximo `make test` (ou `api`, ou `lint`) já reinstala. Na mão, só para forçar.
+
+### Contas
+
+**Conta de desenvolvimento**, recriada a cada `make up`: `admin@exemplo.com` / `123456`, papel
+`admin`. Configurável por `DEV_ADMIN_*` no `.env` e reposta com `make seed`, que serve aos dois
+fluxos por rodar no seu Python contra o banco publicado. O comando **recusa rodar** fora de
+`local`/`test` — a trava está dentro dele (`cli.refuse_outside_dev`), não no script que o chama.
 
 **Administrador de verdade** não nasce de endpoint público, e sim da linha de comando (funciona em
 qualquer ambiente). Omitir `--password` faz o comando pedi-la sem eco:
 
 ```bash
+.venv/bin/python -m cli create-admin --email chefe@empresa.com --username chefe   # na máquina
 docker compose exec api python -m cli create-admin --email chefe@empresa.com --username chefe
 ```
 
-**Configuração** vem toda do ambiente, via `pydantic-settings`. O `.env.example` lista cada variável
-com o que ela faz — é a referência. Quatro **não têm default**, e a aplicação recusa subir sem elas:
-`ENVIRONMENT`, `APP_TIMEZONE`, `DATABASE_URL` e `JWT_SECRET_KEY`.
+A segunda forma é a que vale onde só existe o container — staging e produção.
 
-Os outros alvos do Makefile: `make check` (o que o CI roda), `make lint`, `make fmt`,
-`make typecheck`, `make down`, `make logs`, `make revision m="..."`, `make clean`. `make help` lista
-todos.
+**Configuração** vem toda do ambiente, via `pydantic-settings`. O `.env.example` lista cada variável
+com o que ela faz: é a referência, e o `.env` nasce dele. Quatro **não têm default**, e a aplicação
+recusa subir sem elas: `ENVIRONMENT`, `APP_TIMEZONE`, `DATABASE_URL` e `JWT_SECRET_KEY`.
+
+`make help` lista todos os alvos, agrupados por assunto — rodar, migrations, testes, qualidade e
+ambiente.
 
 ## Arquitetura
 
@@ -198,6 +237,7 @@ make test                                  # as duas metades; sobe o db-test ant
 make test-unit                             # só os unitários, em cerca de um segundo
 make test-integration                      # só o que exige Postgres
 make check                                 # lint + typecheck + testes: o que o CI roda
+make db-test                               # só o banco de teste, para chamar o pytest na mão
 ```
 
 **Só um domínio.** O filtro `k` vai direto para o `-k` do pytest, que casa com o nome do arquivo e
@@ -218,18 +258,3 @@ executável fica em `.venv\Scripts\pytest`:
 .venv/bin/pytest tests/unit/test_clock.py::test_current_month_follows_the_local_date
 .venv/bin/pytest -m "not integration"      # tudo que não precisa de banco
 ```
-
-O que a suíte garante, e que vale saber antes de escrever teste novo:
-
-- **Unitário não toca I/O**, e isso é garantido, não combinado: um fixture em
-  `tests/unit/conftest.py` transforma qualquer tentativa de conectar no Postgres em falha de teste.
-  Serviço se testa com um duble que implementa o `Protocol` que o próprio serviço declara.
-- **Os fixtures de banco moram em `tests/integration/conftest.py`**, nunca no conftest raiz:
-  fixture `autouse` na raiz vale para a árvore inteira de `tests/` e faria a suíte unitária exigir
-  um Postgres de pé só para começar a coletar.
-- **Postgres real**, nunca SQLite: o desenho usa índice parcial, agregação com `FILTER` e `NUMERIC`,
-  e nenhum dos três se comporta igual no SQLite.
-- **Cada teste roda numa transação com rollback** no fim, então nenhum enxerga o dado do outro e a
-  ordem de execução não importa.
-- **`tests/integration/test_authorization_matrix.py` reprova o build se uma rota nova entrar sem
-  decisão de autorização.** Ao adicionar rota, declare-a lá.
