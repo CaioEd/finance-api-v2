@@ -52,6 +52,7 @@ UNVERSIONED_ROUTES_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json")
 PATH_PARAMETER = re.compile(r"\{[^}]+\}")
 
 type Setup = Callable[[AsyncClient, RegisteredUser], Awaitable[str]]
+type BodySetup = Callable[[AsyncClient, RegisteredUser], Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,16 @@ class ProtectedRoute:
     body: dict[str, Any] | None = None
     setup: Setup | None = None
     """Rota com parâmetro no caminho: cria o recurso e devolve o caminho concreto."""
+
+    body_setup: BodySetup | None = None
+    """Rota cujo corpo referencia outro recurso: monta o corpo para o dono.
+
+    Lançamento aponta para uma categoria, e o id dela não é conhecido antes de
+    o dono existir — nem o das categorias do sistema, que a migration cria com
+    `gen_random_uuid()`. O `body` estático continua servindo aos testes de
+    anônimo e de token inválido, onde a autorização decide antes de o corpo ser
+    validado.
+    """
 
     @property
     def key(self) -> tuple[str, str]:
@@ -92,16 +103,38 @@ class ProtectedRoute:
             return self.url()
         return await self.setup(client, user)
 
+    async def owner_body(self, client: AsyncClient, user: RegisteredUser) -> dict[str, Any] | None:
+        """O corpo do próprio usuário, montado antes se ele referenciar outro recurso."""
+        if self.body_setup is None:
+            return self.body
+        return await self.body_setup(client, user)
+
     def __str__(self) -> str:
         return f"{self.method} {self.path}"
 
 
-async def a_category_of(client: AsyncClient, user: RegisteredUser) -> str:
+async def a_category_id_of(client: AsyncClient, user: RegisteredUser) -> str:
     response = await client.post(
         "/api/v1/categories", headers=user.auth, json={"name": "Padaria", "kind": "expense"}
     )
     response.raise_for_status()
-    return f"/api/v1/categories/{response.json()['id']}"
+    return str(response.json()["id"])
+
+
+async def a_category_of(client: AsyncClient, user: RegisteredUser) -> str:
+    return f"/api/v1/categories/{await a_category_id_of(client, user)}"
+
+
+async def a_transaction_body_of(client: AsyncClient, user: RegisteredUser) -> dict[str, Any]:
+    return {"amount": "12.34", "category_id": await a_category_id_of(client, user)}
+
+
+async def a_transaction_of(client: AsyncClient, user: RegisteredUser) -> str:
+    response = await client.post(
+        "/api/v1/transactions", headers=user.auth, json=await a_transaction_body_of(client, user)
+    )
+    response.raise_for_status()
+    return f"/api/v1/transactions/{response.json()['id']}"
 
 
 PROTECTED_ROUTES = [
@@ -123,6 +156,21 @@ PROTECTED_ROUTES = [
         setup=a_category_of,
     ),
     ProtectedRoute("DELETE", "/api/v1/categories/{category_id}", setup=a_category_of),
+    ProtectedRoute("GET", "/api/v1/transactions"),
+    ProtectedRoute(
+        "POST",
+        "/api/v1/transactions",
+        body={"amount": "12.34", "category_id": NOBODY},
+        body_setup=a_transaction_body_of,
+    ),
+    ProtectedRoute("GET", "/api/v1/transactions/{transaction_id}", setup=a_transaction_of),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/transactions/{transaction_id}",
+        body={"amount": "56.78"},
+        setup=a_transaction_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/transactions/{transaction_id}", setup=a_transaction_of),
 ]
 
 # Autenticar não basta: estas exigem o papel de administrador.
@@ -169,8 +217,9 @@ async def test_protected_route_accepts_the_owner(
 ) -> None:
     user = await register_user(client)
     path = await route.owner_path(client, user)
+    body = await route.owner_body(client, user)
 
-    response = await client.request(route.method, path, headers=user.auth, json=route.body)
+    response = await client.request(route.method, path, headers=user.auth, json=body)
 
     assert response.status_code in {200, 201, 204}, (
         f"{route} recusou o próprio dono: {response.status_code} {response.text}"

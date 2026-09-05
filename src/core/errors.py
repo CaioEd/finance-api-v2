@@ -127,6 +127,28 @@ class CategoryNameTakenError(ConflictError):
     message = "Já existe uma categoria com este nome."
 
 
+class CategoryInUseError(ConflictError):
+    code = "category_in_use"
+    message = "Esta categoria tem lançamentos e não pode ser excluída."
+    # Apagar os lançamentos junto seria perder histórico financeiro para
+    # remover um rótulo. Quem quer mesmo se livrar da categoria move os
+    # lançamentos para outra antes.
+
+
+class InvalidCategoryError(UnprocessableError):
+    code = "invalid_category"
+    message = "Categoria inexistente ou de outro usuário."
+    # 422 e não 404: o recurso da requisição é o lançamento, e ele não é o que
+    # está faltando. Categoria de terceiro e categoria inexistente devolvem
+    # exatamente isto, pela mesma razão que credencial inválida tem mensagem
+    # única — a resposta não confirma o que existe na conta alheia.
+
+
+class TransactionNotFoundError(NotFoundError):
+    code = "transaction_not_found"
+    message = "Lançamento não encontrado."
+
+
 class ServiceUnavailableError(DomainError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "service_unavailable"
