@@ -8,23 +8,41 @@ comentários e os docstrings são em **português** — siga a língua ao escrev
 ## Comandos
 
 ```bash
-make install                # cria .venv e instala -e ".[dev]"; refaça sempre que pyproject mudar
+make up                     # tudo no Docker: banco + API, migrada e semeada
+make db                     # só o Postgres de desenvolvimento (localhost:5432)
+make api                    # só a API, local, com reload — sobe o db e migra antes
+make down / logs            # derruba os containers / segue o log da api
+
+make migrate                # alembic upgrade head
+make migrate-status         # alembic current + heads
+make migrate-down           # alembic downgrade -1
+make revision m="mensagem"  # migra, autogenerate, ruff nos arquivos gerados
+
 make check                  # lint + typecheck + testes — exatamente o que o CI roda
 make fmt                    # ruff check --fix + ruff format
 make test                   # sobe o db-test e roda a suíte inteira
 make test-unit              # só os unitários; sem banco. Um domínio: make test-unit k=admin
 make test-integration       # só o que exige Postgres
 make coverage               # mede a cobertura e grava .cache/coverage.json
-make up / down / logs       # api + postgres via compose
-make run                    # uvicorn local com reload
-make revision m="mensagem"  # autogenerate + ruff nos arquivos gerados
-make migrate                # alembic upgrade head
+make install                # recria o venv; raramente necessário na mão (ver abaixo)
 ```
+
+`make help` lista tudo, agrupado pelos mesmos assuntos. **Nenhum alvo tem passo de preparação**:
+
+- **`.env`** nasce do `.env.example` com uma `JWT_SECRET_KEY` gerada, na primeira vez que um alvo
+  precisar dele. A regra não declara pré-requisito de propósito — assim o make só a executa quando
+  o arquivo não existe, e nunca por cima de um `.env` já ajustado.
+- **`.venv`** se reinstala sozinho: os alvos que usam o venv dependem de `.venv/.install-stamp`, que
+  depende do `pyproject.toml`. Mexeu nas dependências, o próximo `make test` reinstala. Por isso
+  `make install` deixou de ser passo obrigatório.
+- **O banco sobe sozinho** para quem precisa dele: `migrate`, `seed` e `api` dependem de `db`;
+  `test`, `test-integration` e `coverage` dependem de `db-test`. Os dois usam `--wait`, então quando
+  a receita seguinte começa o Postgres já aceita conexão.
 
 Os alvos funcionam em Linux, macOS e Windows — nenhum depende de utilitário de shell Unix, e
 `$(PY)` resolve `bin/` ou `Scripts/` conforme o venv que existe. Receita nova segue a regra: só
-`docker ...` ou `$(PY) -m <módulo>`; nada de `rm`, `find`, `grep` ou comentário `#` dentro da receita
-(cmd.exe não conhece nenhum dos quatro).
+`docker ...`, `$(PY) -m <módulo>` ou `$(PYTHON) -c "<script>"`; nada de `rm`, `find`, `grep` ou
+comentário `#` dentro da receita (cmd.exe não conhece nenhum dos quatro).
 
 Um teste só (o venv precisa estar ativo ou use o caminho completo — no Windows,
 `.venv\Scripts\pytest`):
@@ -37,7 +55,7 @@ Um teste só (o venv precisa estar ativo ou use o caminho completo — no Window
 
 A suíte exige **Postgres real** (serviço `db-test` do compose, porta 5433, dados em tmpfs) —
 nunca SQLite: o desenho depende de índice parcial, agregação com `FILTER` e `NUMERIC`, e
-nenhum dos três se comporta igual no SQLite. `make test-db` sobe só o banco e espera ficar
+nenhum dos três se comporta igual no SQLite. `make db-test` sobe só esse banco e espera ficar
 saudável. A URL vem de `TEST_DATABASE_URL`, cujo default mora em
 `tests/integration/conftest.py` — junto de todos os fixtures que abrem conexão. O conftest raiz não
 pode ter nenhum, sob pena de a suíte unitária voltar a exigir banco.
