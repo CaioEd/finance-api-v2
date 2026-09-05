@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.database import get_session
 from repositories.admin_user_repository import AdminUserRepository
+from repositories.balance_repository import BalanceRepository
 from repositories.category_repository import CategoryRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.transaction_repository import TransactionRepository
@@ -24,6 +25,11 @@ def get_user_repository(session: AsyncSession = Depends(get_session)) -> UserRep
 
 def get_category_repository(session: AsyncSession = Depends(get_session)) -> CategoryRepository:
     return CategoryRepository(session)
+
+
+def get_balance_repository(session: AsyncSession = Depends(get_session)) -> BalanceRepository:
+    """Só agrega. Nenhuma rota de saldo alcança lançamento a lançamento por aqui."""
+    return BalanceRepository(session)
 
 
 def get_transaction_repository(

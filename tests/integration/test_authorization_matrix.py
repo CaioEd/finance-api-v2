@@ -192,6 +192,16 @@ async def a_transaction_of(client: AsyncClient, user: RegisteredUser) -> str:
     return f"/api/v1/transactions/{response.json()['id']}"
 
 
+async def a_date_range(_client: AsyncClient, _user: RegisteredUser) -> str:
+    """`/balance/range` exige as duas pontas, e o `setup` é o que as fornece.
+
+    Sem elas a rota responderia 422 ao próprio dono, e o teste passaria a medir
+    a validação do parâmetro em vez da autorização. Para o anônimo o caminho nu
+    basta: a autenticação decide antes de o parâmetro ser lido.
+    """
+    return "/api/v1/balance/range?occurred_from=2026-01-01&occurred_to=2026-12-31"
+
+
 PROTECTED_ROUTES = [
     ProtectedRoute("GET", "/api/v1/users/me"),
     ProtectedRoute("PATCH", "/api/v1/users/me", body={"first_name": "X"}),
@@ -226,6 +236,9 @@ PROTECTED_ROUTES = [
         setup=a_transaction_of,
     ),
     ProtectedRoute("DELETE", "/api/v1/transactions/{transaction_id}", setup=a_transaction_of),
+    ProtectedRoute("GET", "/api/v1/balance/current"),
+    ProtectedRoute("GET", "/api/v1/balance/monthly"),
+    ProtectedRoute("GET", "/api/v1/balance/range", setup=a_date_range),
 ]
 
 # Autenticar não basta: estas exigem o papel de administrador.

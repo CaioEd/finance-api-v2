@@ -57,6 +57,12 @@ NOT_CRUD: set[tuple[str, str]] = {
     ("PATCH", "/api/v1/users/me"),
     ("DELETE", "/api/v1/users/me"),
     ("POST", "/api/v1/users/me/password"),
+    # Saldo: agregação de leitura sobre lançamentos, não um recurso guardado.
+    # Não há o que criar, atualizar nem excluir — o contrato dele está em
+    # `test_balance.py`.
+    ("GET", "/api/v1/balance/current"),
+    ("GET", "/api/v1/balance/monthly"),
+    ("GET", "/api/v1/balance/range"),
 }
 
 

@@ -5,8 +5,8 @@ saldos agregados (mês corrente, mês a mês, intervalo de datas) e baixa um PDF
 período.
 
 Hoje funcionam identidade e sessão (registro, login, refresh rotativo, perfil próprio e o CRUD
-administrativo de usuários), as categorias e os lançamentos de receita e despesa. Saldos agregados e
-o relatório em PDF ainda não existem.
+administrativo de usuários), as categorias, os lançamentos de receita e despesa e os saldos
+agregados. O relatório em PDF ainda não existe.
 
 | Fase | Escopo | Situação |
 |---|---|---|
@@ -14,7 +14,7 @@ o relatório em PDF ainda não existem.
 | 1 | Identidade e sessão: `users`, `refresh_tokens`, auth, `/users/me`, CLI de admin | concluída |
 | 2 | Categorias (globais + custom por usuário) | concluída |
 | 3 | Transações (receitas e despesas numa entidade só) | concluída |
-| 4 | Saldos: mês corrente, mês a mês, intervalo | pendente |
+| 4 | Saldos: mês corrente, mês a mês, intervalo | concluída |
 | 5 | Relatório em PDF | pendente |
 | 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários entregue |
 
@@ -145,6 +145,7 @@ src/
 │       ├── users.py         perfil próprio (/users/me)
 │       ├── categories.py    categorias do sistema e do usuário
 │       ├── transactions.py  lançamentos de receita e despesa
+│       ├── balance.py       saldos agregados; só leitura, sem recurso guardado
 │       ├── admin_users.py   CRUD de usuários, sob require_role(ADMIN)
 │       └── health.py
 │
@@ -190,6 +191,9 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | GET | `/transactions/{id}` | Detalha um lançamento próprio | autenticado |
 | PATCH | `/transactions/{id}` | Atualiza um lançamento próprio | autenticado |
 | DELETE | `/transactions/{id}` | Exclui um lançamento próprio | autenticado |
+| GET | `/balance/current` | Saldo do mês corrente, no fuso da aplicação | autenticado |
+| GET | `/balance/monthly` | Saldo mês a mês (`?from_month=&to_month=`, `YYYY-MM`) | autenticado |
+| GET | `/balance/range` | Saldo de um intervalo (`?occurred_from=&occurred_to=`) | autenticado |
 | GET | `/admin/users` | Lista usuários, com filtro e paginação | admin |
 | POST | `/admin/users` | Cria usuário, com papel e estado à escolha | admin |
 | PATCH | `/admin/users/{user_id}` | Atualiza usuário, inclusive papel e `is_active` | admin |
@@ -227,6 +231,15 @@ vive em `core/errors.py`:
   está preso. Duas fontes para o mesmo fato é como uma despesa acaba lançada em "Salário" e o total
   do mês passa a discordar da lista na tela. Por isso `amount` é sempre positivo — o sinal é
   consequência do tipo, não um segundo jeito de dizê-lo.
+- **Saldo é derivado, nunca guardado.** Não há tabela, model nem migration de saldo: as três rotas
+  de `/balance` são um `SUM(...) FILTER (WHERE categories.kind = ...)` sobre `transactions`, na
+  mesma varredura para receita e despesa. Materializar o total criaria uma segunda fonte para o
+  fato que os lançamentos já contam — e ela passaria a discordar deles no primeiro `PATCH` que
+  alguém esquecesse de propagar. Pelo mesmo motivo `net` não é coluna: é `income - expense`.
+- **Intervalo de saldo é fechado nas duas pontas** (`>=` e `<=`), e a série mês a mês não tem
+  buraco: mês sem lançamento sai zerado, não omitido. Aberto no fim, o lançamento do último dia do
+  mês sumiria do saldo daquele mês sem aparecer no do seguinte; omitindo o mês vazio, quem consome
+  teria de distinguir "não gastei nada" de "o servidor não me contou".
 - **A FK de `transactions.category_id` não declara `ON DELETE`.** O NO ACTION do Postgres é checado
   no fim da instrução: excluir a conta cascateia para categorias e lançamentos juntos e passa, e
   excluir uma categoria que ainda tem lançamento falha, virando `409 category_in_use`. Com
