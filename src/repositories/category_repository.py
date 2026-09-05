@@ -14,8 +14,9 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.errors import CategoryNameTakenError, ConflictError
+from core.errors import CategoryInUseError, CategoryNameTakenError, ConflictError
 from models.category import Category, CategoryKind
+from models.transaction import FK_CATEGORY
 
 
 def _visible_to(user_id: UUID) -> ColumnElement[bool]:
@@ -62,6 +63,10 @@ def translate_integrity_error(exc: IntegrityError) -> ConflictError:
     INSERT. Os dois índices parciais respondem pelo mesmo conflito do ponto de
     vista de quem chamou — o nome já está em uso.
     """
-    if "uq_categories_" in str(exc.orig):
+    detail = str(exc.orig)
+    if "uq_categories_" in detail:
         return CategoryNameTakenError()
+    # O outro lado da FK: excluir uma categoria que ainda tem lançamento.
+    if FK_CATEGORY in detail:
+        return CategoryInUseError()
     return ConflictError()

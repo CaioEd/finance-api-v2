@@ -20,6 +20,7 @@ from core.database import Base
 # Model novo em `models/` precisa entrar nesta lista, ou o autogenerate não o vê.
 from models import category as _category_model  # noqa: F401
 from models import refresh_token as _refresh_token_model  # noqa: F401
+from models import transaction as _transaction_model  # noqa: F401
 from models import user as _user_model  # noqa: F401
 
 config = context.config

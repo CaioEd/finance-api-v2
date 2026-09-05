@@ -5,15 +5,15 @@ saldos agregados (mês corrente, mês a mês, intervalo de datas) e baixa um PDF
 período.
 
 Hoje funcionam identidade e sessão (registro, login, refresh rotativo, perfil próprio e o CRUD
-administrativo de usuários) e as categorias. Transações, saldos e o relatório em PDF ainda não
-existem.
+administrativo de usuários), as categorias e os lançamentos de receita e despesa. Saldos agregados e
+o relatório em PDF ainda não existem.
 
 | Fase | Escopo | Situação |
 |---|---|---|
 | 0 | Esqueleto: config, banco, erros, relógio, health, Alembic, Docker, CI | concluída |
 | 1 | Identidade e sessão: `users`, `refresh_tokens`, auth, `/users/me`, CLI de admin | concluída |
 | 2 | Categorias (globais + custom por usuário) | concluída |
-| 3 | Transações (receitas e despesas numa entidade só) | pendente |
+| 3 | Transações (receitas e despesas numa entidade só) | concluída |
 | 4 | Saldos: mês corrente, mês a mês, intervalo | pendente |
 | 5 | Relatório em PDF | pendente |
 | 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários entregue |
@@ -144,6 +144,7 @@ src/
 │       ├── auth.py          o único arquivo de rotas sem autenticação
 │       ├── users.py         perfil próprio (/users/me)
 │       ├── categories.py    categorias do sistema e do usuário
+│       ├── transactions.py  lançamentos de receita e despesa
 │       ├── admin_users.py   CRUD de usuários, sob require_role(ADMIN)
 │       └── health.py
 │
@@ -184,6 +185,11 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | GET | `/categories/{id}` | Detalha uma categoria visível | autenticado |
 | PATCH | `/categories/{id}` | Renomeia ou troca o tipo | dono; global só admin |
 | DELETE | `/categories/{id}` | Exclui a categoria | dono; global só admin |
+| GET | `/transactions` | Lista os lançamentos, com filtro e paginação | autenticado |
+| POST | `/transactions` | Registra uma receita ou despesa | autenticado |
+| GET | `/transactions/{id}` | Detalha um lançamento próprio | autenticado |
+| PATCH | `/transactions/{id}` | Atualiza um lançamento próprio | autenticado |
+| DELETE | `/transactions/{id}` | Exclui um lançamento próprio | autenticado |
 | GET | `/admin/users` | Lista usuários, com filtro e paginação | admin |
 | POST | `/admin/users` | Cria usuário, com papel e estado à escolha | admin |
 | PATCH | `/admin/users/{user_id}` | Atualiza usuário, inclusive papel e `is_active` | admin |
@@ -217,6 +223,14 @@ vive em `core/errors.py`:
 - **Datas:** competência é `date` no fuso da aplicação, instantes são `TIMESTAMPTZ` em UTC, e "hoje"
   vem sempre de `core.clock.Clock` — nunca de `date.today()`.
 - **Dinheiro é `Decimal`** de ponta a ponta, `NUMERIC(14,2)` no banco, string no JSON. Nunca `float`.
+- **Lançamento não guarda o próprio tipo:** receita ou despesa é o `kind` da categoria à qual ele
+  está preso. Duas fontes para o mesmo fato é como uma despesa acaba lançada em "Salário" e o total
+  do mês passa a discordar da lista na tela. Por isso `amount` é sempre positivo — o sinal é
+  consequência do tipo, não um segundo jeito de dizê-lo.
+- **A FK de `transactions.category_id` não declara `ON DELETE`.** O NO ACTION do Postgres é checado
+  no fim da instrução: excluir a conta cascateia para categorias e lançamentos juntos e passa, e
+  excluir uma categoria que ainda tem lançamento falha, virando `409 category_in_use`. Com
+  `RESTRICT`, que é checado na hora, excluir a conta quebraria.
 - **O schema vem das migrations**, nunca de `create_all` — nem em teste. Model novo precisa ser
   importado em `alembic/env.py`, senão o autogenerate não o enxerga.
 - **Access token** é JWT de 15 min, não revogável. **Refresh token** é string opaca de 30 dias,
