@@ -211,6 +211,34 @@ async def test_deactivating_someone_cuts_the_access_at_once(
     assert blocked.json()["error"]["code"] == "account_inactive"
 
 
+async def test_update_ignores_the_fields_that_came_as_null(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Promover alguém não pode exigir reenviar o cadastro inteiro."""
+    admin = await register_admin(client, db_session)
+    target = await register_user(client, email="bruno@exemplo.com", username="bruno")
+
+    response = await client.patch(
+        f"{USERS}/{target.id}",
+        headers=admin.auth,
+        json={
+            "email": None,
+            "username": None,
+            "first_name": None,
+            "last_name": None,
+            "role": "admin",
+            "is_active": None,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "admin"
+    assert body["email"] == "bruno@exemplo.com"
+    assert body["username"] == "bruno"
+    assert body["is_active"] is True
+
+
 async def test_update_of_an_unknown_user_is_a_404(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:

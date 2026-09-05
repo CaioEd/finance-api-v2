@@ -224,6 +224,35 @@ async def test_update_changes_only_what_was_sent(client: AsyncClient) -> None:
     assert body["kind"] == "expense"
 
 
+async def test_update_ignores_the_fields_that_came_as_null(client: AsyncClient) -> None:
+    """Nulo é "não mexa" — `kind` continua o que era, em vez de virar NULL."""
+    user = await register_user(client)
+    category = await create_category(client, user.auth, name="Padaria", kind="expense")
+
+    response = await client.patch(
+        f"{CATEGORIES}/{category['id']}",
+        headers=user.auth,
+        json={"name": "Padaria e mercado", "kind": None},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Padaria e mercado"
+    assert body["kind"] == "expense"
+
+
+async def test_a_patch_of_only_nulls_leaves_the_category_as_it_was(client: AsyncClient) -> None:
+    user = await register_user(client)
+    category = await create_category(client, user.auth)
+
+    response = await client.patch(
+        f"{CATEGORIES}/{category['id']}", headers=user.auth, json={"name": None, "kind": None}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == category
+
+
 async def test_delete_removes_the_category(client: AsyncClient) -> None:
     user = await register_user(client)
     category = await create_category(client, user.auth)
@@ -233,6 +262,51 @@ async def test_delete_removes_the_category(client: AsyncClient) -> None:
     assert response.status_code == 204
     gone = await client.get(f"{CATEGORIES}/{category['id']}", headers=user.auth)
     assert gone.status_code == 404
+
+
+async def test_deleting_a_category_that_has_transactions_is_a_conflict(
+    client: AsyncClient,
+) -> None:
+    """409, e não 500: perder histórico para apagar um rótulo seria o pior default.
+
+    O caminho depende de `CategoryService.delete` fechar por `_commit()`, que é
+    quem traduz a violação da FK em `CategoryInUseError`. Commitando pela sessão
+    direto, o erro do driver subia cru e virava 500 — e a regra, embora escrita
+    e correta, ficava inalcançável.
+    """
+    user = await register_user(client)
+    category = await create_category(client, user.auth)
+    lancamento = await client.post(
+        "/api/v1/transactions",
+        headers=user.auth,
+        json={"amount": "12.34", "category_id": category["id"]},
+    )
+    lancamento.raise_for_status()
+
+    response = await client.delete(f"{CATEGORIES}/{category['id']}", headers=user.auth)
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "category_in_use"
+    ainda_existe = await client.get(f"{CATEGORIES}/{category['id']}", headers=user.auth)
+    assert ainda_existe.status_code == 200
+
+
+async def test_the_category_is_free_again_once_the_transaction_is_gone(
+    client: AsyncClient,
+) -> None:
+    """A recusa é sobre o vínculo, não sobre a categoria: some o lançamento, some a trava."""
+    user = await register_user(client)
+    category = await create_category(client, user.auth)
+    lancamento = await client.post(
+        "/api/v1/transactions",
+        headers=user.auth,
+        json={"amount": "12.34", "category_id": category["id"]},
+    )
+    await client.delete(f"/api/v1/transactions/{lancamento.json()['id']}", headers=user.auth)
+
+    response = await client.delete(f"{CATEGORIES}/{category['id']}", headers=user.auth)
+
+    assert response.status_code == 204
 
 
 async def test_an_unknown_id_is_not_found(client: AsyncClient) -> None:

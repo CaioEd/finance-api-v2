@@ -127,7 +127,7 @@ class TransactionService:
         self, user: User, transaction_id: UUID, data: TransactionUpdateIn
     ) -> Transaction:
         transaction = await self._owned_or_fail(user, transaction_id)
-        changes = data.model_dump(exclude_unset=True)
+        changes = data.changes()
 
         # A categoria sai do laço: trocá-la exige revalidar a visibilidade, e
         # atribuir `category_id` cru deixaria `category` — de onde vem `kind` —

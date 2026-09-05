@@ -90,11 +90,20 @@ def test_occurred_on_is_optional() -> None:
 def test_the_update_leaves_out_what_was_not_sent() -> None:
     data = TransactionUpdateIn(amount=Decimal("12.00"))
 
-    assert data.model_dump(exclude_unset=True) == {"amount": Decimal("12.00")}
+    assert data.changes() == {"amount": Decimal("12.00")}
+
+
+def test_the_update_leaves_out_what_came_as_null() -> None:
+    """Nulo é "não mexa", igual a ausente — ver `schemas.base.PatchIn`."""
+    data = TransactionUpdateIn(
+        amount=Decimal("12.00"), category_id=None, occurred_on=None, description=None
+    )
+
+    assert data.changes() == {"amount": Decimal("12.00")}
 
 
 def test_an_empty_update_changes_nothing() -> None:
-    assert TransactionUpdateIn().model_dump(exclude_unset=True) == {}
+    assert TransactionUpdateIn().changes() == {}
 
 
 # -------------------------------------------------------------------- saída

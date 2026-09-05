@@ -26,6 +26,7 @@ from models.transaction import (
     AMOUNT_MAX_DIGITS,
     DESCRIPTION_MAX_LENGTH,
 )
+from schemas.base import PatchIn
 
 type Money = Annotated[
     Decimal,
@@ -89,14 +90,12 @@ class TransactionCreateIn(BaseModel):
     description: Description = ""
 
 
-class TransactionUpdateIn(BaseModel):
-    """Todos os campos opcionais: é PATCH.
+class TransactionUpdateIn(PatchIn):
+    """Todos os campos opcionais: é PATCH — ver `schemas.base.PatchIn`.
 
     `occurred_on` é `date | None` como os demais, e `None` aqui significa "não
     mexa" — não "volte para hoje". Quem quer mudar a data manda a data.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     amount: Money | None = None
     category_id: UUID | None = None

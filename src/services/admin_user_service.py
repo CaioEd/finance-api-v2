@@ -98,7 +98,7 @@ class AdminUserService:
     async def update_user(self, user_id: UUID, data: AdminUserUpdateIn, *, actor: User) -> User:
         user = await self._target(user_id, actor)
 
-        changes = data.model_dump(exclude_unset=True)
+        changes = data.changes()
         for field, value in changes.items():
             setattr(user, field, value)
 

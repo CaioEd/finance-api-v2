@@ -386,6 +386,31 @@ async def test_update_changes_only_what_was_sent(user: User) -> None:
     assert work.commits == 1
 
 
+async def test_update_ignores_the_fields_that_came_as_null(user: User) -> None:
+    """Nulo é "não mexa": é o corpo que um formulário manda com um campo mexido.
+
+    Sem isto, editar o valor zerava `description` e `occurred_on` — colunas
+    NOT NULL, e a recusa do banco saía como `409 conflict`.
+    """
+    category = make_category(user_id=user.id)
+    transaction = make_transaction(
+        user_id=user.id, category=category, amount="10.00", description="Feira"
+    )
+    service = build_service(
+        FakeTransactionStore([transaction]), FakeCategoryLookup([category]), FakeUnitOfWork()
+    )
+    data = TransactionUpdateIn.model_validate(
+        {"amount": "99.90", "category_id": None, "occurred_on": None, "description": None}
+    )
+
+    updated = await service.update(user, transaction.id, data)
+
+    assert updated.amount == Decimal("99.90")
+    assert updated.description == "Feira"
+    assert updated.occurred_on == date(2026, 9, 1)
+    assert updated.category is category
+
+
 async def test_changing_the_category_changes_the_kind(user: User) -> None:
     """O tipo acompanha a categoria porque não existe uma segunda fonte para ele."""
     despesa = make_category(user_id=user.id, name="Mercado", kind=CategoryKind.EXPENSE)

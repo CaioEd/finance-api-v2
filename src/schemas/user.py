@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, BeforeValidator, ConfigDict, EmailStr, Field, StringConstraints
 
 from models.user import Role
+from schemas.base import PatchIn
 
 PASSWORD_MIN_LENGTH = 10
 
@@ -49,10 +50,8 @@ class UserOut(BaseModel):
     created_at: datetime
 
 
-class UserUpdateIn(BaseModel):
-    """Todos os campos opcionais: é PATCH."""
-
-    model_config = ConfigDict(extra="forbid")
+class UserUpdateIn(PatchIn):
+    """Todos os campos opcionais: é PATCH — ver `schemas.base.PatchIn`."""
 
     email: Email | None = None
     username: Username | None = None
@@ -92,15 +91,13 @@ class AdminUserCreateIn(BaseModel):
     is_active: bool = True
 
 
-class AdminUserUpdateIn(BaseModel):
-    """Todos os campos opcionais: é PATCH.
+class AdminUserUpdateIn(PatchIn):
+    """Todos os campos opcionais: é PATCH — ver `schemas.base.PatchIn`.
 
     Senha não entra: trocar a senha de outra pessoa sem conhecer a atual é um
     fluxo de recuperação, com o seu próprio desenho. Para barrar o acesso de
     alguém agora, o campo é `is_active`.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     email: Email | None = None
     username: Username | None = None

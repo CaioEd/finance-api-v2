@@ -51,4 +51,11 @@ def test_unknown_fields_are_rejected() -> None:
 def test_the_update_leaves_out_what_was_not_sent() -> None:
     data = CategoryUpdateIn(name="Padaria")
 
-    assert data.model_dump(exclude_unset=True) == {"name": "Padaria"}
+    assert data.changes() == {"name": "Padaria"}
+
+
+def test_the_update_leaves_out_what_came_as_null() -> None:
+    """Nulo é "não mexa", igual a ausente — ver `schemas.base.PatchIn`."""
+    data = CategoryUpdateIn(name="Padaria", kind=None)
+
+    assert data.changes() == {"name": "Padaria"}

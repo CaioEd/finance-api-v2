@@ -114,6 +114,19 @@ Organização **por domínio** (`src/domains/<dominio>/`), com o mesmo esquema d
 - Exceção de camada deliberada: `core/dependencies.py` importa `domains.users.models` — autenticar
   é carregar um usuário, e abstrair isso só moveria o acoplamento.
 
+### PATCH atualiza só o que foi escolhido
+
+Todo schema de entrada de PATCH herda de `schemas.base.PatchIn`, e o serviço aplica `data.changes()`
+— nunca um `model_dump(exclude_unset=True)` escrito na mão. **Campo ausente e campo nulo significam
+a mesma coisa: não mexa.** Quem monta um PATCH quase nunca o faz à mão: formulário, "Try it out" do
+Swagger e cliente gerado do OpenAPI mandam `null` no que o usuário não preencheu, e gravar esse
+`null` violaria o `NOT NULL` da coluna — a resposta saía como `409 conflict`, obrigando a reenviar
+o cadastro inteiro para trocar um campo.
+
+A equivalência vale enquanto nenhuma coluna editável for anulável. Coluna nova em que `null` queira
+dizer "limpe este campo" precisa de um sentinela que separe "ausente" de "nulo"; não dá para
+expressar isso com `None`.
+
 ### Erros
 
 Serviços levantam `DomainError` (`core/errors.py`); ninguém abaixo da camada HTTP conhece

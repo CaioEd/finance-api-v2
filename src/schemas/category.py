@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, BeforeValidator, ConfigDict, StringConstraints
 
 from models.category import CATEGORY_NAME_MAX_LENGTH, CategoryKind
+from schemas.base import PatchIn
 
 
 def _normalize_name(value: object) -> object:
@@ -52,10 +53,8 @@ class CategoryCreateIn(BaseModel):
     kind: CategoryKind
 
 
-class CategoryUpdateIn(BaseModel):
-    """Todos os campos opcionais: é PATCH."""
-
-    model_config = ConfigDict(extra="forbid")
+class CategoryUpdateIn(PatchIn):
+    """Todos os campos opcionais: é PATCH — ver `schemas.base.PatchIn`."""
 
     name: CategoryName | None = None
     kind: CategoryKind | None = None

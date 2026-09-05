@@ -55,7 +55,7 @@ class CategoryService:
 
     async def update(self, user: User, category_id: UUID, data: CategoryUpdateIn) -> Category:
         category = await self._mutable_or_fail(user, category_id)
-        for field, value in data.model_dump(exclude_unset=True).items():
+        for field, value in data.changes().items():
             setattr(category, field, value)
         await self._commit()
         return category
@@ -63,7 +63,10 @@ class CategoryService:
     async def delete(self, user: User, category_id: UUID) -> None:
         category = await self._mutable_or_fail(user, category_id)
         await self._session.delete(category)
-        await self._session.commit()
+        # `_commit()`, não `self._session.commit()`: excluir categoria que tem
+        # lançamento viola a FK, e é `_commit` quem traduz isso em
+        # `CategoryInUseError`. Sem ele o erro do driver sobe cru e vira 500.
+        await self._commit()
 
     async def _visible_or_fail(self, user: User, category_id: UUID) -> Category:
         category = await self._categories.get_visible(category_id, user.id)

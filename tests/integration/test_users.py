@@ -42,6 +42,66 @@ async def test_patch_updates_only_what_was_sent(client: AsyncClient) -> None:
     assert body["email"] == user.email
 
 
+async def test_patch_ignores_the_fields_that_came_as_null(client: AsyncClient) -> None:
+    """O corpo que um formulário manda quando a pessoa mexeu num campo só.
+
+    O `null` dos campos intocados não é valor a gravar: as colunas são
+    NOT NULL, e a recusa do banco saía como `409 conflict` — obrigando a
+    preencher o cadastro inteiro para trocar o primeiro nome.
+    """
+    user = await register_user(client)
+
+    response = await client.patch(
+        "/api/v1/users/me",
+        headers=user.auth,
+        json={"email": None, "username": None, "first_name": "Ana Paula", "last_name": None},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["first_name"] == "Ana Paula"
+    assert body["last_name"] == "Ribeiro"
+    assert body["email"] == user.email
+    assert body["username"] == user.username
+
+
+async def test_a_patch_of_only_nulls_leaves_the_profile_as_it_was(client: AsyncClient) -> None:
+    user = await register_user(client)
+    before = (await client.get("/api/v1/users/me", headers=user.auth)).json()
+
+    response = await client.patch(
+        "/api/v1/users/me",
+        headers=user.auth,
+        json={"email": None, "username": None, "first_name": None, "last_name": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == before
+
+
+async def test_patch_still_updates_every_field_at_once(client: AsyncClient) -> None:
+    """O outro extremo: quem manda tudo continua atualizando tudo."""
+    user = await register_user(client)
+
+    response = await client.patch(
+        "/api/v1/users/me",
+        headers=user.auth,
+        json={
+            "email": "ana.paula@exemplo.com",
+            "username": "anapaula",
+            "first_name": "Ana Paula",
+            "last_name": "Ribeiro Lima",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email"] == "ana.paula@exemplo.com"
+    assert body["username"] == "anapaula"
+    assert body["first_name"] == "Ana Paula"
+    assert body["last_name"] == "Ribeiro Lima"
+
+
 async def test_patch_rejects_unknown_fields(client: AsyncClient) -> None:
     """`role` e `is_active` não são editáveis pelo próprio usuário."""
     user = await register_user(client)

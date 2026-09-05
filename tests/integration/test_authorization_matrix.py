@@ -8,9 +8,20 @@ cobrir repetiria o erro.
 Por isso são duas coisas:
 
 1. **A matriz** declara, rota a rota, o que cada persona deve receber. São três
-   personas: anônimo, autenticado comum e administrador — e as rotas se dividem
-   em `PUBLIC_ROUTES`, `PROTECTED_ROUTES` (basta autenticar) e `ADMIN_ROUTES`
-   (exigem o papel).
+   personas — anônimo, autenticado comum e administrador — e as rotas se dividem
+   em `PUBLIC_ROUTES` (existem para quem não tem token), `PROTECTED_ROUTES`
+   (basta autenticar) e `ADMIN_ROUTES` (exigem o papel):
+
+   | | pública | protegida | de admin |
+   |---|---|---|---|
+   | **anônimo** | passa | 401 | 401 |
+   | **autenticado** | passa | passa | 403 |
+   | **administrador** | passa | passa | passa |
+
+   As nove casas são verificadas. A linha das públicas é o que faltava: elas só
+   constavam da checagem de completude, e nada afirmava que ainda funcionam sem
+   token — uma dependência de autenticação acrescentada por engano ao router de
+   `/auth` trancaria todo mundo do lado de fora sem reprovar o build.
 2. **A checagem de completude** compara a matriz com as rotas realmente
    registradas na aplicação. Rota nova sem entrada aqui reprova o build, e a
    forma mais rápida de fazer o build passar é dizer quem pode acessá-la.
@@ -28,18 +39,62 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import RegisteredUser, register_admin, register_user
+from tests.factories import (
+    RegisteredUser,
+    register_admin,
+    register_user,
+    registration_payload,
+)
 
 ANONYMOUS = "anônimo"
 OWNER = "dono"
 
-# Rotas que existem justamente para quem ainda não tem token.
-PUBLIC_ROUTES: set[tuple[str, str]] = {
-    ("POST", "/api/v1/auth/register"),
-    ("POST", "/api/v1/auth/login"),
-    ("POST", "/api/v1/auth/refresh"),
-    ("POST", "/api/v1/auth/logout"),
-}
+type AnonymousBody = Callable[[AsyncClient], Awaitable[dict[str, Any]]]
+
+
+@dataclass(frozen=True, slots=True)
+class PublicRoute:
+    """Rota que existe justamente para quem ainda não tem token.
+
+    O corpo é montado por uma função, e não escrito aqui: login e refresh
+    precisam de uma conta que exista, e o token dela não é conhecido antes de a
+    requisição de registro acontecer. Sem isso, o teste mediria o `401` de
+    credencial errada e concluiria — errado — que a rota exige autenticação.
+    """
+
+    method: str
+    path: str
+    body: AnonymousBody
+    expected: int
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.method, self.path)
+
+    def __str__(self) -> str:
+        return f"{self.method} {self.path}"
+
+
+async def a_registration(_client: AsyncClient) -> dict[str, Any]:
+    return registration_payload()
+
+
+async def credentials_of_an_existing_account(client: AsyncClient) -> dict[str, Any]:
+    user = await register_user(client)
+    return {"email": user.email, "password": user.password}
+
+
+async def a_valid_refresh_token(client: AsyncClient) -> dict[str, Any]:
+    user = await register_user(client)
+    return {"refresh_token": user.refresh_token}
+
+
+PUBLIC_ROUTES = [
+    PublicRoute("POST", "/api/v1/auth/register", a_registration, expected=201),
+    PublicRoute("POST", "/api/v1/auth/login", credentials_of_an_existing_account, expected=200),
+    PublicRoute("POST", "/api/v1/auth/refresh", a_valid_refresh_token, expected=200),
+    PublicRoute("POST", "/api/v1/auth/logout", a_valid_refresh_token, expected=204),
+]
 
 # Um id sintático válido que não pertence a ninguém: serve para montar a URL
 # de quem nem token tem, onde a autorização decide antes de o alvo importar.
@@ -190,6 +245,36 @@ ADMIN_ROUTES = [
 ]
 
 
+@pytest.mark.parametrize("route", PUBLIC_ROUTES, ids=str)
+async def test_public_route_works_without_a_token(client: AsyncClient, route: PublicRoute) -> None:
+    """A linha que faltava na matriz: público continua público.
+
+    Bastaria alguém acrescentar `dependencies=[Depends(get_current_user)]` ao
+    router de `/auth` — como os outros routers têm, por ser o default do
+    projeto — para ninguém conseguir mais entrar. Nenhum outro teste pegaria
+    isso: os fixtures registram e logam para *chegar* nas rotas protegidas, e
+    falhariam com um erro que aponta para o lugar errado.
+    """
+    response = await client.request(route.method, route.path, json=await route.body(client))
+
+    assert response.status_code == route.expected, (
+        f"{route} respondeu {response.status_code} sem token: {response.text}"
+    )
+
+
+@pytest.mark.parametrize("route", PUBLIC_ROUTES, ids=str)
+async def test_public_route_ignores_a_garbage_token(
+    client: AsyncClient, route: PublicRoute
+) -> None:
+    """Um token velho no cliente não pode impedir o login que o renovaria."""
+    body = await route.body(client)
+    headers = {"Authorization": "Bearer nao-e-um-token"}
+
+    response = await client.request(route.method, route.path, headers=headers, json=body)
+
+    assert response.status_code == route.expected, f"{route} tropeçou num token inválido"
+
+
 @pytest.mark.parametrize("route", PROTECTED_ROUTES, ids=str)
 async def test_protected_route_rejects_anonymous(
     client: AsyncClient, route: ProtectedRoute
@@ -223,6 +308,27 @@ async def test_protected_route_accepts_the_owner(
 
     assert response.status_code in {200, 201, 204}, (
         f"{route} recusou o próprio dono: {response.status_code} {response.text}"
+    )
+
+
+@pytest.mark.parametrize("route", PROTECTED_ROUTES, ids=str)
+async def test_protected_route_accepts_an_admin_too(
+    client: AsyncClient, db_session: AsyncSession, route: ProtectedRoute
+) -> None:
+    """Administrador é um autenticado com um papel a mais, não uma persona à parte.
+
+    `require_role` fecha a rota de admin para o usuário comum; o inverso não
+    existe, e uma rota comum que passasse a exigir `Role.USER` — em vez de só
+    exigir autenticação — trancaria o administrador para fora da própria conta.
+    """
+    admin = await register_admin(client, db_session)
+    path = await route.owner_path(client, admin)
+    body = await route.owner_body(client, admin)
+
+    response = await client.request(route.method, path, headers=admin.auth, json=body)
+
+    assert response.status_code in {200, 201, 204}, (
+        f"{route} recusou um administrador: {response.status_code} {response.text}"
     )
 
 
@@ -287,7 +393,7 @@ async def test_every_route_is_declared_in_this_matrix(app: FastAPI) -> None:
     routers incluídos como objetos opacos, e varrer `app.routes` devolveria uma
     lista vazia — um teste que passa sem verificar nada é pior que teste nenhum.
     """
-    declared = {route.key for route in [*PROTECTED_ROUTES, *ADMIN_ROUTES]} | PUBLIC_ROUTES
+    declared = {route.key for route in [*PUBLIC_ROUTES, *PROTECTED_ROUTES, *ADMIN_ROUTES]}
 
     registered: set[tuple[str, str]] = {
         (method.upper(), path)

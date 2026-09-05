@@ -1,14 +1,17 @@
 # Cobertura de testes
 
 Medida em **2026-09-05** com `make coverage`, sobre o estado que este commit entrega — a fase 3
-(transações) concluída. Não há hash aqui de propósito: o documento vive dentro do commit que ele
+(transações) concluída, mais a correção do PATCH parcial (`schemas/base.py`), a do `delete` de
+categoria e as duas matrizes de contrato (`test_crud_contract.py` e `test_authorization_matrix.py`). Não há hash aqui de propósito: o documento vive dentro do commit que ele
 descreve, e um hash nesta linha ou é o do commit anterior ou não existe ainda. Para saber se
 envelheceu, compare a tabela de fases do `README.md` com a lista de módulos abaixo.
 
+Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `testes.md`.
+
 | | |
 |---|---|
-| **Cobertura total** | **93%** — 1463 linhas executáveis, 80 sem cobertura |
-| Suíte | 239 testes: 95 unitários, 144 de integração |
+| **Cobertura total** | **94%** — 1469 linhas executáveis, 78 sem cobertura |
+| Suíte | 351 testes: 120 unitários, 231 de integração (2 pulados) |
 | Só os unitários | 46% — e está certo assim: unitário cobre regra, não fiação |
 
 Os 46% não são uma meta frustrada. Os testes unitários exercitam relógio, configuração,
@@ -49,14 +52,15 @@ de verdade, e é a suíte de integração que os cobre. Quem responde pela cober
 | `models/transaction.py` | 32 | 97% |
 | `models/user.py` | 30 | 97% |
 | `repositories/admin_user_repository.py` | 43 | 100% |
-| `repositories/category_repository.py` | 33 | 85% |
+| `repositories/category_repository.py` | 33 | 95% |
 | `repositories/refresh_token_repository.py` | 18 | 100% |
 | `repositories/transaction_repository.py` | 52 | 84% |
 | `repositories/user_repository.py` | 27 | 94% |
 | `schemas/auth.py` | 28 | 100% |
+| `schemas/base.py` | 7 | 100% |
 | `schemas/category.py` | 25 | 100% |
 | `schemas/transaction.py` | 48 | 100% |
-| `schemas/user.py` | 58 | 100% |
+| `schemas/user.py` | 57 | 100% |
 | `services/admin_user_service.py` | 58 | 100% |
 | `services/auth_service.py` | 89 | 91% |
 | `services/category_service.py` | 49 | 100% |
@@ -64,9 +68,9 @@ de verdade, e é a suíte de integração que os cobre. Quem responde pela cober
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
-22 dos 38 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
-`auth_service`, tratada abaixo. Os dois repositórios abaixo de 90% são a fase 3 recém-entregue, e a
-razão está na lista de lacunas.
+23 dos 39 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
+`auth_service`, tratada abaixo. O único repositório abaixo de 90% é o de transações, e a razão
+está na lista de lacunas.
 
 ## O que não está coberto
 
@@ -76,7 +80,6 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 
 | Onde | O que não é exercitado |
 |---|---|
-| `repositories/category_repository.py:70-71` | excluir categoria que tem lançamento → `CategoryInUseError` |
 | `repositories/transaction_repository.py:49,51,53,55` | os quatro filtros da listagem: tipo, categoria e as duas pontas do intervalo de datas |
 | `services/auth_service.py:90` | login de conta desativada → `AccountInactiveError` |
 | `services/auth_service.py:117` | refresh com token expirado |
@@ -92,19 +95,21 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `core/config.py:118` | `is_production` |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
 
-**Não existe `tests/integration/test_transactions.py`.** O domínio de transações chegou com 20
-testes unitários de serviço e 18 de contrato de schema, e o que o exercita contra Postgres é a
-matriz de autorização — que cria categoria e lançamento de verdade em cada rota, e por isso leva
-`api/routes/transactions.py` e `services/transaction_service.py` a 100%. O que falta é o degrau do
-banco: os filtros da listagem, a paginação, e as duas garantias que só a FK dá.
+**Continua não existindo `tests/integration/test_transactions.py`**, mas a lacuna encolheu: a matriz
+de CRUD (`test_crud_contract.py`) agora exercita transações contra Postgres no ciclo inteiro —
+criar, ler, listar, atualizar, excluir, e as recusas de id e de campo. O que ainda falta é o que a
+matriz não tem como generalizar: os **filtros da listagem** (tipo, categoria e as duas pontas do
+intervalo de datas), que são a primeira linha da tabela acima.
 
-As duas primeiras linhas da tabela são as que mais pesam nesta fase. A exclusão de categoria em uso
-e o comportamento da FK sem `ON DELETE` **foram verificados à mão contra o Postgres de teste** — a
-categoria em uso é recusada, a exclusão de conta cascateia sem deixar órfão e as categorias globais
-sobrevivem —, mas verificação à mão não impede regressão. É a primeira coisa a escrever.
+A exclusão de categoria em uso saiu desta lista. Ela estava marcada como "verificada à mão", e a
+verificação à mão tinha olhado o efeito no banco — a categoria não é excluída — sem olhar a
+resposta: `CategoryService.delete` fechava por `self._session.commit()` em vez de `_commit()`,
+pulava a tradução e devolvia **500 em vez de 409**. A regra estava escrita e correta, e
+inalcançável. É o argumento inteiro deste documento: lacuna de cobertura não é número feio, é
+comportamento que ninguém olhou.
 
-Depois delas vêm os quatro caminhos de `auth_service`: são **negação de acesso**, exatamente onde um
-erro não aparece em teste manual e vira brecha em produção.
+O que mais pesa agora são os quatro caminhos de `auth_service`: são **negação de acesso**,
+exatamente onde um erro não aparece em teste manual e vira brecha em produção.
 
 ### Não são lacunas de teste
 

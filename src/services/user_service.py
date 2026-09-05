@@ -29,7 +29,7 @@ class UserService:
         self._clock = clock
 
     async def update_profile(self, user: User, data: UserUpdateIn) -> User:
-        changes = data.model_dump(exclude_unset=True)
+        changes = data.changes()
         for field, value in changes.items():
             setattr(user, field, value)
 
