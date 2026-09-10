@@ -22,6 +22,7 @@ make check                  # lint + typecheck + testes — exatamente o que o C
 make fmt                    # ruff check --fix + ruff format
 make test                   # sobe o db-test e roda a suíte inteira
 make test-unit              # só os unitários; sem banco. Um domínio: make test-unit k=admin
+make test-api               # só a suíte de API: TestClient + SQLite em memória, sem Docker
 make test-integration       # só o que exige Postgres
 make coverage               # mede a cobertura e grava .cache/coverage.json
 make install                # recria o venv; raramente necessário na mão (ver abaixo)
@@ -53,12 +54,25 @@ Um teste só (o venv precisa estar ativo ou use o caminho completo — no Window
 .venv/bin/pytest tests/unit -x -q
 ```
 
-A suíte exige **Postgres real** (serviço `db-test` do compose, porta 5433, dados em tmpfs) —
-nunca SQLite: o desenho depende de índice parcial, agregação com `FILTER` e `NUMERIC`, e
-nenhum dos três se comporta igual no SQLite. `make db-test` sobe só esse banco e espera ficar
-saudável. A URL vem de `TEST_DATABASE_URL`, cujo default mora em
-`tests/integration/conftest.py` — junto de todos os fixtures que abrem conexão. O conftest raiz não
-pode ter nenhum, sob pena de a suíte unitária voltar a exigir banco.
+São **três** suítes, e duas delas não tocam em banco externo:
+
+- `tests/unit/` — regra pura, sem I/O.
+- `tests/api/` — a aplicação inteira pelo `TestClient`, contra um **SQLite em memória** criado do
+  `Base.metadata` e destruído a cada teste. É onde mora o contrato HTTP: as duas matrizes (quem
+  alcança cada rota, o que cada rota faz) e a checagem de que todo endpoint é exercitado. No fim da
+  rodada ela imprime quantos endpoints receberam um 2xx e quantos ficaram sem cobertura.
+  `tests/api/sqlite_backend.py` documenta as cinco traduções de schema e os seus limites; as que
+  são código escrito à mão têm teste próprio em `tests/api/test_balance.py`.
+- `tests/integration/` — **Postgres real** (serviço `db-test`, porta 5433, dados em tmpfs). Fica
+  aqui tudo que o SQLite não reproduz, e é por isso que esta suíte não some: migrations (lá o
+  schema nasce delas), as categorias do sistema semeadas por migration, índice parcial, `NUMERIC` e
+  as funções de data (`date_trunc`, que o saldo mensal usa). `make db-test` sobe só esse banco. A URL vem de `TEST_DATABASE_URL`, cujo
+  default mora em `tests/integration/conftest.py` — junto de todos os fixtures que abrem conexão. O
+  conftest raiz não pode ter nenhum, sob pena de a suíte unitária voltar a exigir banco.
+
+**Endpoint novo entra com teste de API junto.** As duas matrizes reprovam o build até a rota ser
+declarada, e o relatório de cobertura a lista como lacuna até ela receber um 2xx. O passo a passo
+está na skill `endpoint-novo` (`.claude/skills/endpoint-novo/`).
 
 ## Arquitetura
 
@@ -194,7 +208,8 @@ constraint (`uq_users_username`).
 annotations` no topo de todo módulo, caches de ferramenta em `.cache/`.
 
 Testes de integração usam `httpx.AsyncClient` com `ASGITransport` contra a app real (o fixture
-`app` entra no `lifespan_context` à mão, senão `app.state.database` não existe). Testes unitários
+`app` entra no `lifespan_context` à mão, senão `app.state.database` não existe); os de API usam o
+`TestClient`, que sobe o lifespan sozinho e roda tudo no event loop do seu portal. Testes unitários
 não tocam I/O: serviço se testa com repositório *fake* implementando um `Protocol`, não com mock de
 SQLAlchemy. Isso é garantido, não combinado: um fixture em `tests/unit/conftest.py`
 transforma qualquer tentativa de conectar no Postgres em falha de teste.

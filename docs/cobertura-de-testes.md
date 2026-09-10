@@ -1,22 +1,31 @@
 # Cobertura de testes
 
-Medida em **2026-09-05** com `make coverage`, sobre o estado que este commit entrega — a fase 4
-(saldos: mês corrente, mês a mês e intervalo de datas) concluída sobre a fase 3. Não há hash aqui de
-propósito: o documento vive dentro do commit que ele descreve, e um hash nesta linha ou é o do
-commit anterior ou não existe ainda. Para saber se envelheceu, compare a tabela de fases do
-`README.md` com a lista de módulos abaixo.
+Medida em **2026-09-10** com `make coverage`, sobre o estado que este commit entrega — a fase 4
+(saldos: mês corrente, mês a mês e intervalo de datas) concluída sobre a fase 3, mais a suíte de API
+(`tests/api/`: `TestClient` contra um SQLite em memória), para onde as duas matrizes de contrato se
+mudaram. Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
+hash nesta linha ou é o do commit anterior ou não existe ainda. Para saber se envelheceu, compare a
+tabela de fases do `README.md` com a lista de módulos abaixo.
 
 Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `testes.md`.
 
 | | |
 |---|---|
-| **Cobertura total** | **95%** — 1653 linhas executáveis, 76 sem cobertura |
-| Suíte | 414 testes: 146 unitários, 268 de integração (2 pulados) |
+| **Cobertura total** | **95%** — 1653 linhas executáveis, 75 sem cobertura |
+| Suíte | 420 testes: 146 unitários, 153 de API, 121 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 90% — os 299 testes que rodam sem Docker |
 | Só os unitários | 48% — e está certo assim: unitário cobre regra, não fiação |
 
 Os 48% não são uma meta frustrada. Os testes unitários exercitam relógio, configuração,
-criptografia e a regra dos serviços; rota, repositório e sessão só ganham sentido contra um Postgres
-de verdade, e é a suíte de integração que os cobre. Quem responde pela cobertura é a suíte inteira.
+criptografia e a regra dos serviços; rota, repositório e sessão precisam da aplicação de pé, e é a
+suíte de API que os alcança — daí o salto para 90% sem nenhum banco externo. Os cinco pontos que
+faltam para o total são o que só o Postgres de verdade exercita: migrations, as categorias que a
+migration semeia, o agrupamento mensal do saldo e a tradução de constraint pelo nome. Quem responde
+pela cobertura é a suíte inteira.
+
+A suíte de API também responde por **quantos endpoints** têm teste, e o número sai no fim de toda
+rodada dela — hoje, 27 de 27. É uma cobertura diferente da de linhas: mede o contrato publicado, não
+o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 
 > **Ao medir, `concurrency = ["thread", "greenlet"]` não é opcional.** A ponte async do SQLAlchemy
 > executa dentro de um greenlet, e sem essa declaração o rastreador perde tudo que roda depois de um
@@ -39,7 +48,7 @@ de verdade, e é a suíte de integração que os cobre. Quem responde pela cober
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 44 | 100% |
 | `core/config.py` | 79 | 95% |
-| `core/database.py` | 28 | 93% |
+| `core/database.py` | 28 | 96% |
 | `core/errors.py` | 109 | 98% |
 | `core/security.py` | 72 | 95% |
 | `dependencies/auth.py` | 27 | 100% |
@@ -134,7 +143,7 @@ exatamente onde um erro não aparece em teste manual e vira brecha em produção
 | `models/user.py:85` (`is_admin`) | **nada no código chama esta property** — `require_role` compara `user.role` |
 | `models/refresh_token.py:55` (`is_usable_at`) | idem: `AuthService.refresh` checa `revoked_at` e `expires_at` direto |
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
-| `core/database.py:86,90` | properties `engine`/`sessionmaker`, alcançadas só pelo `get_session` acima |
+| `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness |
 | `core/config.py:124` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
 | `main.py:76` | o middleware de CORS só entra quando `CORS_ORIGINS` não é vazio, e a configuração de teste o deixa vazio |
 | `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:121` | `__repr__`, texto de depuração |

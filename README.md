@@ -27,7 +27,7 @@ agregados. O relatório em PDF ainda não existe.
 | Banco | PostgreSQL 17, SQLAlchemy 2.0 async + asyncpg |
 | Migrations | Alembic (modo async) |
 | Auth | JWT próprio (PyJWT) + senha em argon2id |
-| Testes | pytest + pytest-asyncio + httpx.AsyncClient |
+| Testes | pytest + pytest-asyncio; TestClient (API, em SQLite) e httpx.AsyncClient (integração) |
 | Qualidade | ruff (lint + format), mypy `--strict` |
 | Execução | Docker Compose (api + db + db-test) |
 
@@ -244,27 +244,42 @@ vive em `core/errors.py`:
   no fim da instrução: excluir a conta cascateia para categorias e lançamentos juntos e passa, e
   excluir uma categoria que ainda tem lançamento falha, virando `409 category_in_use`. Com
   `RESTRICT`, que é checado na hora, excluir a conta quebraria.
-- **O schema vem das migrations**, nunca de `create_all` — nem em teste. Model novo precisa ser
-  importado em `alembic/env.py`, senão o autogenerate não o enxerga.
+- **O schema vem das migrations**, nunca de `create_all` — nem na suíte de integração, que é onde
+  migration quebrada precisa reprovar o build. A exceção é declarada e limitada: a suíte de API
+  monta um SQLite do `Base.metadata`, e é exatamente por isso que ela não substitui a de
+  integração. Model novo precisa ser importado em `alembic/env.py`, senão o autogenerate não o
+  enxerga.
 - **Access token** é JWT de 15 min, não revogável. **Refresh token** é string opaca de 30 dias,
   guardada só como SHA-256 e invalidada a cada uso; reapresentar um já rotacionado derruba a
   linhagem inteira daquela sessão.
 
 ## Como rodar todos os testes
 
-A suíte tem duas metades, e só uma precisa de banco:
+A suíte tem três partes, e só uma precisa de banco:
 
 | | Onde mora | Precisa de Postgres |
 |---|---|---|
 | Unitários | `tests/unit/` | **não** — nem de Docker, nem de rede |
+| API | `tests/api/` | **não** — `TestClient` contra um SQLite em memória |
 | Integração | `tests/integration/` | sim (serviço `db-test`, dados em tmpfs) |
 
 ```bash
-make test                                  # as duas metades; sobe o db-test antes
+make test                                  # as três partes; sobe o db-test antes
 make test-unit                             # só os unitários, em cerca de um segundo
+make test-api                              # só a suíte de API: todos os endpoints, sem Docker
 make test-integration                      # só o que exige Postgres
 make check                                 # lint + typecheck + testes: o que o CI roda
 make db-test                               # só o banco de teste, para chamar o pytest na mão
+```
+
+**`make test-api`** (ou `.venv/bin/pytest tests/api`) sobe a aplicação inteira com o `TestClient` e
+um SQLite em memória, criado e destruído a cada teste — roda em qualquer máquina, sem Docker e sem
+banco de pé. No fim ela imprime quantos endpoints a suíte exercitou e quantos ficaram sem cobertura,
+para que rota nova apareça como lacuna até ganhar teste:
+
+```
+------------------------ cobertura de endpoints da API -------------------------
+27 de 27 endpoints cobertos (100%)
 ```
 
 **Só um domínio.** O filtro `k` vai direto para o `-k` do pytest, que casa com o nome do arquivo e
@@ -283,5 +298,9 @@ executável fica em `.venv\Scripts\pytest`:
 ```bash
 .venv/bin/pytest tests/unit/test_admin_user_service.py
 .venv/bin/pytest tests/unit/test_clock.py::test_current_month_follows_the_local_date
+.venv/bin/pytest tests/api                 # a suíte de API inteira
 .venv/bin/pytest -m "not integration"      # tudo que não precisa de banco
 ```
+
+`docs/testes.md` detalha os tipos de teste e o que cada um cobre; a skill `endpoint-novo`
+(`.claude/skills/`) diz o que fazer quando você acrescenta uma rota.

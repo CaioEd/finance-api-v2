@@ -38,7 +38,7 @@ endif
 VENV_STAMP := $(VENV)/.install-stamp
 
 .PHONY: help up db api down logs seed migrate migrate-status migrate-down \
-        revision test test-unit test-integration coverage db-test \
+        revision test test-unit test-api test-integration coverage db-test \
         lint fmt typecheck check install clean
 
 help:  ## Lista os alvos disponíveis
@@ -96,6 +96,9 @@ test: $(VENV_STAMP) db-test  ## A suíte inteira, contra o Postgres de teste
 
 test-unit: $(VENV_STAMP)  ## Só os unitários: sem Docker, sem banco. Um domínio: make test-unit k=admin
 	$(PY) -m pytest tests/unit $(if $(k),-k "$(k)")
+
+test-api: $(VENV_STAMP)  ## Só a suíte de API: TestClient + SQLite em memória, sem Docker
+	$(PY) -m pytest tests/api $(if $(k),-k "$(k)")
 
 test-integration: $(VENV_STAMP) db-test  ## Só o que exige Postgres
 	$(PY) -m pytest tests/integration
