@@ -1,22 +1,26 @@
 # Cobertura de testes
 
-Medida em **2026-09-05** com `make coverage`, sobre o estado que este commit entrega — a fase 3
-(transações) concluída, mais a correção do PATCH parcial (`schemas/base.py`), a do `delete` de
-categoria e as duas matrizes de contrato (`test_crud_contract.py` e `test_authorization_matrix.py`). Não há hash aqui de propósito: o documento vive dentro do commit que ele
-descreve, e um hash nesta linha ou é o do commit anterior ou não existe ainda. Para saber se
-envelheceu, compare a tabela de fases do `README.md` com a lista de módulos abaixo.
+Medida em **2026-09-10** com `make coverage`, sobre o estado que este commit entrega — a fase 3
+(transações) concluída, mais a suíte de API (`tests/api/`: `TestClient` contra um SQLite em
+memória), para onde as duas matrizes de contrato se mudaram. Não há hash aqui de propósito: o
+documento vive dentro do commit que ele descreve, e um hash nesta linha ou é o do commit anterior ou
+não existe ainda. Para saber se envelheceu, compare a tabela de fases do `README.md` com a lista de
+módulos abaixo.
 
 Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `testes.md`.
 
 | | |
 |---|---|
-| **Cobertura total** | **94%** — 1469 linhas executáveis, 78 sem cobertura |
-| Suíte | 351 testes: 120 unitários, 231 de integração (2 pulados) |
+| **Cobertura total** | **94%** — 1469 linhas executáveis, 77 sem cobertura |
+| Suíte | 353 testes: 120 unitários, 137 de API, 96 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 89% — os 257 testes que rodam sem Docker |
 | Só os unitários | 46% — e está certo assim: unitário cobre regra, não fiação |
 
 Os 46% não são uma meta frustrada. Os testes unitários exercitam relógio, configuração,
-criptografia e a regra dos serviços; rota, repositório e sessão só ganham sentido contra um Postgres
-de verdade, e é a suíte de integração que os cobre. Quem responde pela cobertura é a suíte inteira.
+criptografia e a regra dos serviços; rota, repositório e sessão precisam da aplicação de pé, e é a
+suíte de API que os alcança — daí o salto para 89% sem nenhum banco externo. Os cinco pontos que
+faltam para o total são o que só o Postgres de verdade exercita: migrations, dado semeado por
+migration e a tradução de constraint com nome. Quem responde pela cobertura é a suíte inteira.
 
 > **Ao medir, `concurrency = ["thread", "greenlet"]` não é opcional.** A ponte async do SQLAlchemy
 > executa dentro de um greenlet, e sem essa declaração o rastreador perde tudo que roda depois de um
@@ -38,7 +42,7 @@ de verdade, e é a suíte de integração que os cobre. Quem responde pela cober
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 29 | 100% |
 | `core/config.py` | 79 | 95% |
-| `core/database.py` | 28 | 93% |
+| `core/database.py` | 28 | 96% |
 | `core/errors.py` | 103 | 98% |
 | `core/security.py` | 72 | 95% |
 | `dependencies/auth.py` | 27 | 100% |
@@ -96,10 +100,11 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
 
 **Continua não existindo `tests/integration/test_transactions.py`**, mas a lacuna encolheu: a matriz
-de CRUD (`test_crud_contract.py`) agora exercita transações contra Postgres no ciclo inteiro —
-criar, ler, listar, atualizar, excluir, e as recusas de id e de campo. O que ainda falta é o que a
-matriz não tem como generalizar: os **filtros da listagem** (tipo, categoria e as duas pontas do
-intervalo de datas), que são a primeira linha da tabela acima.
+de CRUD (`tests/api/test_crud_contract.py`) exercita transações no ciclo inteiro — criar, ler,
+listar, atualizar, excluir, e as recusas de id e de campo. O que ainda falta é o que a matriz não
+tem como generalizar: os **filtros da listagem** (tipo, categoria e as duas pontas do intervalo de
+datas), que são a primeira linha da tabela acima. Eles são SQL, e SQL se testa contra Postgres — o
+arquivo que falta é de integração, não de API.
 
 A exclusão de categoria em uso saiu desta lista. Ela estava marcada como "verificada à mão", e a
 verificação à mão tinha olhado o efeito no banco — a categoria não é excluída — sem olhar a
@@ -118,7 +123,7 @@ exatamente onde um erro não aparece em teste manual e vira brecha em produção
 | `models/user.py:85` (`is_admin`) | **nada no código chama esta property** — `require_role` compara `user.role` |
 | `models/refresh_token.py:55` (`is_usable_at`) | idem: `AuthService.refresh` checa `revoked_at` e `expires_at` direto |
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
-| `core/database.py:86,90` | properties `engine`/`sessionmaker`, alcançadas só pelo `get_session` acima |
+| `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness em produção |
 | `core/config.py:124` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
 | `main.py:76` | o middleware de CORS só entra quando `CORS_ORIGINS` não é vazio, e a configuração de teste o deixa vazio |
 | `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:121` | `__repr__`, texto de depuração |

@@ -23,6 +23,12 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "httpx>=0.28",
+    # O TestClient do Starlette fala httpx2; com só o httpx ele ainda funciona,
+    # mas avisa que a ponte está depreciada. Quem usa é a suíte de API.
+    "httpx2>=2.12",
+    # Driver do SQLite em memória de `tests/api/`. Não entra em `dependencies`:
+    # a aplicação roda em Postgres, e só ele.
+    "aiosqlite>=0.20",
     "ruff>=0.8",
     "mypy>=1.13",
 ]

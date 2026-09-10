@@ -15,27 +15,32 @@ aparecem para quem consome.
 
 `/users/me` fica de fora da parametrização: é um singleton, sem coleção nem id
 no caminho, e forçá-lo neste molde exigiria um `if` em cada invariante. O
-contrato dele está em `test_users.py`, e a checagem de completude o declara
-explicitamente para que a ausência seja uma decisão, não um esquecimento.
+contrato dele está em `tests/integration/test_users.py`, e a checagem de
+completude o declara explicitamente para que a ausência seja uma decisão, não
+um esquecimento.
+
+Uniformidade é assunto da borda HTTP, não do banco, então esta matriz roda na
+suíte de API — `TestClient` contra um SQLite em memória, sem Docker (ver
+`tests/api/conftest.py`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
-from httpx import AsyncClient, Response
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from schemas.base import PatchIn
 from schemas.category import CategoryUpdateIn
 from schemas.transaction import TransactionUpdateIn
 from schemas.user import AdminUserUpdateIn
-from tests.factories import RegisteredUser, register_admin, register_user
+from tests.api.client import ApiClient, Response
+from tests.api.factories import register_admin, register_user
+from tests.factories import RegisteredUser
 
 GHOST = "00000000-0000-0000-0000-000000000000"
 """Um UUID sintaticamente válido que não pertence a ninguém."""
@@ -52,7 +57,8 @@ NOT_CRUD: set[tuple[str, str]] = {
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
-    # O próprio perfil: singleton, resolvido pelo token — ver `test_users.py`.
+    # O próprio perfil: singleton, resolvido pelo token —
+    # ver `tests/integration/test_users.py`.
     ("GET", "/api/v1/users/me"),
     ("PATCH", "/api/v1/users/me"),
     ("DELETE", "/api/v1/users/me"),
@@ -61,8 +67,8 @@ NOT_CRUD: set[tuple[str, str]] = {
 
 
 type Body = dict[str, Any]
-type Actor = Callable[[AsyncClient, AsyncSession], Awaitable[RegisteredUser]]
-type BodyFactory = Callable[[AsyncClient, RegisteredUser], Awaitable[Body]]
+type Actor = Callable[[ApiClient], RegisteredUser]
+type BodyFactory = Callable[[ApiClient, RegisteredUser], Body]
 
 
 def suffix() -> str:
@@ -77,20 +83,18 @@ def suffix() -> str:
 # ------------------------------------------------------------ corpos de criação
 
 
-async def a_category(_client: AsyncClient, _user: RegisteredUser) -> Body:
+def a_category(_client: ApiClient, _user: RegisteredUser) -> Body:
     return {"name": f"Padaria {suffix()}", "kind": "expense"}
 
 
-async def a_transaction(client: AsyncClient, user: RegisteredUser) -> Body:
+def a_transaction(client: ApiClient, user: RegisteredUser) -> Body:
     """Lançamento aponta para categoria, e o id dela nasce com o dono."""
-    created = await client.post(
-        "/api/v1/categories", headers=user.auth, json=await a_category(client, user)
-    )
+    created = client.post("/api/v1/categories", headers=user.auth, json=a_category(client, user))
     created.raise_for_status()
     return {"amount": "12.34", "category_id": created.json()["id"], "description": "Feira"}
 
 
-async def an_account(_client: AsyncClient, _user: RegisteredUser) -> Body:
+def an_account(_client: ApiClient, _user: RegisteredUser) -> Body:
     sfx = suffix()
     return {
         "email": f"novo-{sfx}@exemplo.com",
@@ -155,7 +159,7 @@ RESOURCES = [
         create=a_category,
         patch={"name": "Padaria e mercado"},
         update_schema=CategoryUpdateIn,
-        actor=lambda client, _session: register_user(client),
+        actor=register_user,
         paginated=False,
     ),
     Crud(
@@ -165,7 +169,7 @@ RESOURCES = [
         create=a_transaction,
         patch={"amount": "56.78"},
         update_schema=TransactionUpdateIn,
-        actor=lambda client, _session: register_user(client),
+        actor=register_user,
         paginated=True,
     ),
     Crud(
@@ -192,26 +196,22 @@ ROUTE_TEMPLATES = {
 # --------------------------------------------------------------------- apoio
 
 
-async def create_one(client: AsyncClient, user: RegisteredUser, crud: Crud) -> Body:
-    response = await client.post(
-        crud.collection, headers=user.auth, json=await crud.create(client, user)
-    )
+def create_one(client: ApiClient, user: RegisteredUser, crud: Crud) -> Body:
+    response = client.post(crud.collection, headers=user.auth, json=crud.create(client, user))
     assert response.status_code == 201, f"{crud}: criação falhou — {response.text}"
     body: Body = response.json()
     return body
 
 
-async def listing(client: AsyncClient, user: RegisteredUser, crud: Crud) -> list[Body]:
-    response = await client.get(crud.collection, headers=user.auth)
+def listing(client: ApiClient, user: RegisteredUser, crud: Crud) -> list[Body]:
+    response = client.get(crud.collection, headers=user.auth)
     assert response.status_code == 200, f"{crud}: listagem falhou — {response.text}"
     payload = response.json()
     items: list[Body] = payload["items"] if crud.paginated else payload
     return items
 
 
-async def read_back(
-    client: AsyncClient, user: RegisteredUser, crud: Crud, resource_id: str
-) -> Body | None:
+def read_back(client: ApiClient, user: RegisteredUser, crud: Crud, resource_id: str) -> Body | None:
     """O recurso como quem consome volta a enxergá-lo, ou `None` se sumiu.
 
     Passa pelo `GET /{id}` quando ele existe e pela listagem quando não —
@@ -219,14 +219,14 @@ async def read_back(
     invariantes que os outros em vez de ficar de fora delas.
     """
     if crud.item_read:
-        response = await client.get(crud.url(resource_id), headers=user.auth)
+        response = client.get(crud.url(resource_id), headers=user.auth)
         if response.status_code == 404:
             return None
         assert response.status_code == 200, f"{crud}: leitura falhou — {response.text}"
         body: Body = response.json()
         return body
 
-    for item in await listing(client, user, crud):
+    for item in listing(client, user, crud):
         if item["id"] == resource_id:
             return item
     return None
@@ -254,54 +254,46 @@ def nulls_around(crud: Crud) -> Body:
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_create_then_read_returns_the_same_resource(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
+def test_create_then_read_returns_the_same_resource(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
 
-    created = await create_one(client, user, crud)
-    read = await read_back(client, user, crud, created["id"])
+    created = create_one(client, user, crud)
+    read = read_back(client, user, crud, created["id"])
 
     assert read is not None, f"{crud}: o recurso criado não é alcançável"
     assert read == created, f"{crud}: leitura difere da criação"
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_the_created_resource_appears_in_the_listing(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
+def test_the_created_resource_appears_in_the_listing(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
 
-    created = await create_one(client, user, crud)
+    created = create_one(client, user, crud)
 
-    assert created["id"] in {item["id"] for item in await listing(client, user, crud)}
+    assert created["id"] in {item["id"] for item in listing(client, user, crud)}
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_delete_removes_the_resource(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
+def test_delete_removes_the_resource(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
 
-    response = await client.delete(crud.url(created["id"]), headers=user.auth)
+    response = client.delete(crud.url(created["id"]), headers=user.auth)
 
     assert response.status_code == 204, f"{crud}: exclusão respondeu {response.status_code}"
     assert response.content == b"", f"{crud}: 204 não pode ter corpo"
-    assert await read_back(client, user, crud, created["id"]) is None
-    assert created["id"] not in {item["id"] for item in await listing(client, user, crud)}
+    assert read_back(client, user, crud, created["id"]) is None
+    assert created["id"] not in {item["id"] for item in listing(client, user, crud)}
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_deleting_twice_is_not_found(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
+def test_deleting_twice_is_not_found(client: ApiClient, crud: Crud) -> None:
     """A segunda exclusão é 404, não 204: o recurso não existe mais."""
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
-    await client.delete(crud.url(created["id"]), headers=user.auth)
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
+    client.delete(crud.url(created["id"]), headers=user.auth)
 
-    response = await client.delete(crud.url(created["id"]), headers=user.auth)
+    response = client.delete(crud.url(created["id"]), headers=user.auth)
 
     assert response.status_code == 404, f"{crud}: respondeu {response.status_code}"
     assert_envelope(response)
@@ -311,13 +303,11 @@ async def test_deleting_twice_is_not_found(
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_update_changes_what_was_sent_and_keeps_the_rest(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
+def test_update_changes_what_was_sent_and_keeps_the_rest(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
 
-    response = await client.patch(crud.url(created["id"]), headers=user.auth, json=crud.patch)
+    response = client.patch(crud.url(created["id"]), headers=user.auth, json=crud.patch)
 
     assert response.status_code == 200, f"{crud}: PATCH respondeu {response.text}"
     updated = response.json()
@@ -328,21 +318,17 @@ async def test_update_changes_what_was_sent_and_keeps_the_rest(
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_patch_ignores_the_fields_that_came_as_null(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
+def test_patch_ignores_the_fields_that_came_as_null(client: ApiClient, crud: Crud) -> None:
     """Nulo é "não mexa", igual a ausente — ver `schemas.base.PatchIn`.
 
     Sem isto, editar um campo tentava gravar NULL em todos os outros; as
     colunas são NOT NULL e a recusa do banco saía como `409 conflict`,
     obrigando a reenviar o recurso inteiro para trocar um campo.
     """
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
 
-    response = await client.patch(
-        crud.url(created["id"]), headers=user.auth, json=nulls_around(crud)
-    )
+    response = client.patch(crud.url(created["id"]), headers=user.auth, json=nulls_around(crud))
 
     assert response.status_code == 200, f"{crud}: PATCH com nulos respondeu {response.text}"
     updated = response.json()
@@ -353,27 +339,23 @@ async def test_patch_ignores_the_fields_that_came_as_null(
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_a_patch_of_only_nulls_changes_nothing(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
+def test_a_patch_of_only_nulls_changes_nothing(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
     todos_nulos = dict.fromkeys(crud.update_schema.model_fields)
 
-    response = await client.patch(crud.url(created["id"]), headers=user.auth, json=todos_nulos)
+    response = client.patch(crud.url(created["id"]), headers=user.auth, json=todos_nulos)
 
     assert response.status_code == 200
     assert response.json() == created
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_an_empty_patch_is_a_no_op(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
+def test_an_empty_patch_is_a_no_op(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
 
-    response = await client.patch(crud.url(created["id"]), headers=user.auth, json={})
+    response = client.patch(crud.url(created["id"]), headers=user.auth, json={})
 
     assert response.status_code == 200, f"{crud}: corpo vazio respondeu {response.text}"
     assert response.json() == created
@@ -384,14 +366,12 @@ async def test_an_empty_patch_is_a_no_op(
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
 @pytest.mark.parametrize("method", ["GET", "PATCH", "DELETE"])
-async def test_an_id_that_does_not_exist_is_not_found(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud, method: str
-) -> None:
+def test_an_id_that_does_not_exist_is_not_found(client: ApiClient, crud: Crud, method: str) -> None:
     if method == "GET" and not crud.item_read:
         pytest.skip(f"{crud} não expõe GET de item")
-    user = await crud.actor(client, db_session)
+    user = crud.actor(client)
 
-    response = await client.request(
+    response = client.request(
         method, crud.url(GHOST), headers=user.auth, json=crud.patch if method == "PATCH" else None
     )
 
@@ -401,15 +381,13 @@ async def test_an_id_that_does_not_exist_is_not_found(
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
 @pytest.mark.parametrize("method", ["GET", "PATCH", "DELETE"])
-async def test_a_malformed_id_is_a_validation_error(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud, method: str
-) -> None:
+def test_a_malformed_id_is_a_validation_error(client: ApiClient, crud: Crud, method: str) -> None:
     """422, e não 404: o caminho está mal formado, não é um recurso ausente."""
     if method == "GET" and not crud.item_read:
         pytest.skip(f"{crud} não expõe GET de item")
-    user = await crud.actor(client, db_session)
+    user = crud.actor(client)
 
-    response = await client.request(
+    response = client.request(
         method,
         crud.url(MALFORMED),
         headers=user.auth,
@@ -422,78 +400,68 @@ async def test_a_malformed_id_is_a_validation_error(
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_create_rejects_an_unknown_field(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
+def test_create_rejects_an_unknown_field(client: ApiClient, crud: Crud) -> None:
     """`extra="forbid"`: descartar em silêncio faria o 201 mentir."""
-    user = await crud.actor(client, db_session)
-    body = await crud.create(client, user) | {"campo_que_nao_existe": "x"}
+    user = crud.actor(client)
+    body = crud.create(client, user) | {"campo_que_nao_existe": "x"}
 
-    response = await client.post(crud.collection, headers=user.auth, json=body)
+    response = client.post(crud.collection, headers=user.auth, json=body)
 
     assert response.status_code == 422, f"{crud}: aceitou campo desconhecido"
     assert_envelope(response, code="validation_error")
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_update_rejects_an_unknown_field(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
+def test_update_rejects_an_unknown_field(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
 
-    response = await client.patch(
+    response = client.patch(
         crud.url(created["id"]), headers=user.auth, json={"campo_que_nao_existe": "x"}
     )
 
     assert response.status_code == 422, f"{crud}: aceitou campo desconhecido"
     assert_envelope(response, code="validation_error")
-    assert await read_back(client, user, crud, created["id"]) == created
+    assert read_back(client, user, crud, created["id"]) == created
 
 
 # -------------------------------------------------------------- forma da resposta
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_create_read_and_update_agree_on_the_shape(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
+def test_create_read_and_update_agree_on_the_shape(client: ApiClient, crud: Crud) -> None:
     """O mesmo recurso tem os mesmos campos nas três respostas.
 
     Um `POST` que devolve menos campos que o `GET` obriga quem consome a
     reconsultar o recurso que acabou de criar.
     """
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
-    read = await read_back(client, user, crud, created["id"])
-    updated = await client.patch(crud.url(created["id"]), headers=user.auth, json=crud.patch)
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
+    read = read_back(client, user, crud, created["id"])
+    updated = client.patch(crud.url(created["id"]), headers=user.auth, json=crud.patch)
 
     assert read is not None
     assert set(created) == set(read) == set(updated.json())
 
 
 @pytest.mark.parametrize("crud", RESOURCES, ids=str)
-async def test_the_listing_carries_the_same_shape_as_the_item(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
-    user = await crud.actor(client, db_session)
-    created = await create_one(client, user, crud)
+def test_the_listing_carries_the_same_shape_as_the_item(client: ApiClient, crud: Crud) -> None:
+    user = crud.actor(client)
+    created = create_one(client, user, crud)
 
-    listado = next(i for i in await listing(client, user, crud) if i["id"] == created["id"])
+    listado = next(i for i in listing(client, user, crud) if i["id"] == created["id"])
 
     assert set(listado) == set(created)
 
 
 @pytest.mark.parametrize("crud", [c for c in RESOURCES if c.paginated], ids=str)
-async def test_a_paginated_listing_reports_the_whole_filter(
-    client: AsyncClient, db_session: AsyncSession, crud: Crud
-) -> None:
+def test_a_paginated_listing_reports_the_whole_filter(client: ApiClient, crud: Crud) -> None:
     """`total` é do filtro inteiro, não do que coube na página."""
-    user = await crud.actor(client, db_session)
-    await create_one(client, user, crud)
-    await create_one(client, user, crud)
+    user = crud.actor(client)
+    create_one(client, user, crud)
+    create_one(client, user, crud)
 
-    response = await client.get(crud.collection, headers=user.auth, params={"limit": 1})
+    response = client.get(crud.collection, headers=user.auth, params={"limit": 1})
 
     assert response.status_code == 200
     page = response.json()
@@ -507,7 +475,7 @@ async def test_a_paginated_listing_reports_the_whole_filter(
 # ------------------------------------------------------------------ completude
 
 
-async def test_every_crud_route_is_declared_in_this_matrix(app: FastAPI) -> None:
+def test_every_crud_route_is_declared_in_this_matrix(app: FastAPI) -> None:
     """Impede que um recurso novo entre sem o contrato uniforme verificado.
 
     A enumeração vem do schema OpenAPI, não de `app.routes`: o FastAPI guarda

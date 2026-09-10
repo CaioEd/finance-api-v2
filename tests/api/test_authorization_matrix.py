@@ -25,31 +25,30 @@ Por isso são duas coisas:
 2. **A checagem de completude** compara a matriz com as rotas realmente
    registradas na aplicação. Rota nova sem entrada aqui reprova o build, e a
    forma mais rápida de fazer o build passar é dizer quem pode acessá-la.
+
+Quem alcança uma rota é decidido pelas dependências do router, não pelo banco,
+então a matriz roda na suíte de API — `TestClient` contra um SQLite em memória,
+sem Docker (ver `tests/api/conftest.py`).
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import (
-    RegisteredUser,
-    register_admin,
-    register_user,
-    registration_payload,
-)
+from tests.api.client import ApiClient
+from tests.api.factories import register_admin, register_user
+from tests.factories import RegisteredUser, registration_payload
 
 ANONYMOUS = "anônimo"
 OWNER = "dono"
 
-type AnonymousBody = Callable[[AsyncClient], Awaitable[dict[str, Any]]]
+type AnonymousBody = Callable[[ApiClient], dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,17 +74,17 @@ class PublicRoute:
         return f"{self.method} {self.path}"
 
 
-async def a_registration(_client: AsyncClient) -> dict[str, Any]:
+def a_registration(_client: ApiClient) -> dict[str, Any]:
     return registration_payload()
 
 
-async def credentials_of_an_existing_account(client: AsyncClient) -> dict[str, Any]:
-    user = await register_user(client)
+def credentials_of_an_existing_account(client: ApiClient) -> dict[str, Any]:
+    user = register_user(client)
     return {"email": user.email, "password": user.password}
 
 
-async def a_valid_refresh_token(client: AsyncClient) -> dict[str, Any]:
-    user = await register_user(client)
+def a_valid_refresh_token(client: ApiClient) -> dict[str, Any]:
+    user = register_user(client)
     return {"refresh_token": user.refresh_token}
 
 
@@ -106,8 +105,8 @@ UNVERSIONED_ROUTES_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json")
 
 PATH_PARAMETER = re.compile(r"\{[^}]+\}")
 
-type Setup = Callable[[AsyncClient, RegisteredUser], Awaitable[str]]
-type BodySetup = Callable[[AsyncClient, RegisteredUser], Awaitable[dict[str, Any]]]
+type Setup = Callable[[ApiClient, RegisteredUser], str]
+type BodySetup = Callable[[ApiClient, RegisteredUser], dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,9 +122,9 @@ class ProtectedRoute:
     body_setup: BodySetup | None = None
     """Rota cujo corpo referencia outro recurso: monta o corpo para o dono.
 
-    Lançamento aponta para uma categoria, e o id dela não é conhecido antes de
-    o dono existir — nem o das categorias do sistema, que a migration cria com
-    `gen_random_uuid()`. O `body` estático continua servindo aos testes de
+    Lançamento aponta para uma categoria, e o id dela não é conhecido antes
+    de o dono existir — nem o das categorias do sistema, que nascem com o id
+    que o banco sorteia. O `body` estático continua servindo aos testes de
     anônimo e de token inválido, onde a autorização decide antes de o corpo ser
     validado.
     """
@@ -148,7 +147,7 @@ class ProtectedRoute:
         """
         return PATH_PARAMETER.sub(target_id, self.path)
 
-    async def owner_path(self, client: AsyncClient, user: RegisteredUser) -> str:
+    def owner_path(self, client: ApiClient, user: RegisteredUser) -> str:
         """O caminho do recurso do próprio usuário, criando-o antes se preciso.
 
         Categoria não se alcança por um id qualquer: o dono precisa ter criado a
@@ -156,37 +155,37 @@ class ProtectedRoute:
         """
         if self.setup is None:
             return self.url()
-        return await self.setup(client, user)
+        return self.setup(client, user)
 
-    async def owner_body(self, client: AsyncClient, user: RegisteredUser) -> dict[str, Any] | None:
+    def owner_body(self, client: ApiClient, user: RegisteredUser) -> dict[str, Any] | None:
         """O corpo do próprio usuário, montado antes se ele referenciar outro recurso."""
         if self.body_setup is None:
             return self.body
-        return await self.body_setup(client, user)
+        return self.body_setup(client, user)
 
     def __str__(self) -> str:
         return f"{self.method} {self.path}"
 
 
-async def a_category_id_of(client: AsyncClient, user: RegisteredUser) -> str:
-    response = await client.post(
+def a_category_id_of(client: ApiClient, user: RegisteredUser) -> str:
+    response = client.post(
         "/api/v1/categories", headers=user.auth, json={"name": "Padaria", "kind": "expense"}
     )
     response.raise_for_status()
     return str(response.json()["id"])
 
 
-async def a_category_of(client: AsyncClient, user: RegisteredUser) -> str:
-    return f"/api/v1/categories/{await a_category_id_of(client, user)}"
+def a_category_of(client: ApiClient, user: RegisteredUser) -> str:
+    return f"/api/v1/categories/{a_category_id_of(client, user)}"
 
 
-async def a_transaction_body_of(client: AsyncClient, user: RegisteredUser) -> dict[str, Any]:
-    return {"amount": "12.34", "category_id": await a_category_id_of(client, user)}
+def a_transaction_body_of(client: ApiClient, user: RegisteredUser) -> dict[str, Any]:
+    return {"amount": "12.34", "category_id": a_category_id_of(client, user)}
 
 
-async def a_transaction_of(client: AsyncClient, user: RegisteredUser) -> str:
-    response = await client.post(
-        "/api/v1/transactions", headers=user.auth, json=await a_transaction_body_of(client, user)
+def a_transaction_of(client: ApiClient, user: RegisteredUser) -> str:
+    response = client.post(
+        "/api/v1/transactions", headers=user.auth, json=a_transaction_body_of(client, user)
     )
     response.raise_for_status()
     return f"/api/v1/transactions/{response.json()['id']}"
@@ -246,7 +245,7 @@ ADMIN_ROUTES = [
 
 
 @pytest.mark.parametrize("route", PUBLIC_ROUTES, ids=str)
-async def test_public_route_works_without_a_token(client: AsyncClient, route: PublicRoute) -> None:
+def test_public_route_works_without_a_token(client: ApiClient, route: PublicRoute) -> None:
     """A linha que faltava na matriz: público continua público.
 
     Bastaria alguém acrescentar `dependencies=[Depends(get_current_user)]` ao
@@ -255,7 +254,7 @@ async def test_public_route_works_without_a_token(client: AsyncClient, route: Pu
     isso: os fixtures registram e logam para *chegar* nas rotas protegidas, e
     falhariam com um erro que aponta para o lugar errado.
     """
-    response = await client.request(route.method, route.path, json=await route.body(client))
+    response = client.request(route.method, route.path, json=route.body(client))
 
     assert response.status_code == route.expected, (
         f"{route} respondeu {response.status_code} sem token: {response.text}"
@@ -263,48 +262,40 @@ async def test_public_route_works_without_a_token(client: AsyncClient, route: Pu
 
 
 @pytest.mark.parametrize("route", PUBLIC_ROUTES, ids=str)
-async def test_public_route_ignores_a_garbage_token(
-    client: AsyncClient, route: PublicRoute
-) -> None:
+def test_public_route_ignores_a_garbage_token(client: ApiClient, route: PublicRoute) -> None:
     """Um token velho no cliente não pode impedir o login que o renovaria."""
-    body = await route.body(client)
+    body = route.body(client)
     headers = {"Authorization": "Bearer nao-e-um-token"}
 
-    response = await client.request(route.method, route.path, headers=headers, json=body)
+    response = client.request(route.method, route.path, headers=headers, json=body)
 
     assert response.status_code == route.expected, f"{route} tropeçou num token inválido"
 
 
 @pytest.mark.parametrize("route", PROTECTED_ROUTES, ids=str)
-async def test_protected_route_rejects_anonymous(
-    client: AsyncClient, route: ProtectedRoute
-) -> None:
-    response = await client.request(route.method, route.url(), json=route.body)
+def test_protected_route_rejects_anonymous(client: ApiClient, route: ProtectedRoute) -> None:
+    response = client.request(route.method, route.url(), json=route.body)
 
     assert response.status_code == 401, f"{route} respondeu {response.status_code} sem token"
     assert response.json()["error"]["code"] in {"invalid_token", "token_expired"}
 
 
 @pytest.mark.parametrize("route", PROTECTED_ROUTES, ids=str)
-async def test_protected_route_rejects_a_garbage_token(
-    client: AsyncClient, route: ProtectedRoute
-) -> None:
+def test_protected_route_rejects_a_garbage_token(client: ApiClient, route: ProtectedRoute) -> None:
     headers = {"Authorization": "Bearer nao-e-um-token"}
 
-    response = await client.request(route.method, route.url(), headers=headers, json=route.body)
+    response = client.request(route.method, route.url(), headers=headers, json=route.body)
 
     assert response.status_code == 401
 
 
 @pytest.mark.parametrize("route", PROTECTED_ROUTES, ids=str)
-async def test_protected_route_accepts_the_owner(
-    client: AsyncClient, route: ProtectedRoute
-) -> None:
-    user = await register_user(client)
-    path = await route.owner_path(client, user)
-    body = await route.owner_body(client, user)
+def test_protected_route_accepts_the_owner(client: ApiClient, route: ProtectedRoute) -> None:
+    user = register_user(client)
+    path = route.owner_path(client, user)
+    body = route.owner_body(client, user)
 
-    response = await client.request(route.method, path, headers=user.auth, json=body)
+    response = client.request(route.method, path, headers=user.auth, json=body)
 
     assert response.status_code in {200, 201, 204}, (
         f"{route} recusou o próprio dono: {response.status_code} {response.text}"
@@ -312,20 +303,18 @@ async def test_protected_route_accepts_the_owner(
 
 
 @pytest.mark.parametrize("route", PROTECTED_ROUTES, ids=str)
-async def test_protected_route_accepts_an_admin_too(
-    client: AsyncClient, db_session: AsyncSession, route: ProtectedRoute
-) -> None:
+def test_protected_route_accepts_an_admin_too(client: ApiClient, route: ProtectedRoute) -> None:
     """Administrador é um autenticado com um papel a mais, não uma persona à parte.
 
     `require_role` fecha a rota de admin para o usuário comum; o inverso não
     existe, e uma rota comum que passasse a exigir `Role.USER` — em vez de só
     exigir autenticação — trancaria o administrador para fora da própria conta.
     """
-    admin = await register_admin(client, db_session)
-    path = await route.owner_path(client, admin)
-    body = await route.owner_body(client, admin)
+    admin = register_admin(client)
+    path = route.owner_path(client, admin)
+    body = route.owner_body(client, admin)
 
-    response = await client.request(route.method, path, headers=admin.auth, json=body)
+    response = client.request(route.method, path, headers=admin.auth, json=body)
 
     assert response.status_code in {200, 201, 204}, (
         f"{route} recusou um administrador: {response.status_code} {response.text}"
@@ -333,21 +322,19 @@ async def test_protected_route_accepts_an_admin_too(
 
 
 @pytest.mark.parametrize("route", ADMIN_ROUTES, ids=str)
-async def test_admin_route_rejects_anonymous(client: AsyncClient, route: ProtectedRoute) -> None:
-    response = await client.request(route.method, route.url(), json=route.body)
+def test_admin_route_rejects_anonymous(client: ApiClient, route: ProtectedRoute) -> None:
+    response = client.request(route.method, route.url(), json=route.body)
 
     assert response.status_code == 401, f"{route} respondeu {response.status_code} sem token"
 
 
 @pytest.mark.parametrize("route", ADMIN_ROUTES, ids=str)
-async def test_admin_route_rejects_a_common_user(
-    client: AsyncClient, route: ProtectedRoute
-) -> None:
+def test_admin_route_rejects_a_common_user(client: ApiClient, route: ProtectedRoute) -> None:
     """O CRUD de usuários aberto a qualquer autenticado era o problema 5 do sistema antigo."""
-    intruder = await register_user(client)
-    victim = await register_user(client, email="bruno@exemplo.com", username="bruno")
+    intruder = register_user(client)
+    victim = register_user(client, email="bruno@exemplo.com", username="bruno")
 
-    response = await client.request(
+    response = client.request(
         route.method, route.url(victim.id), headers=intruder.auth, json=route.body
     )
 
@@ -356,37 +343,35 @@ async def test_admin_route_rejects_a_common_user(
 
 
 @pytest.mark.parametrize("route", ADMIN_ROUTES, ids=str)
-async def test_admin_route_accepts_an_admin(
-    client: AsyncClient, db_session: AsyncSession, route: ProtectedRoute
-) -> None:
-    admin = await register_admin(client, db_session)
-    target = await register_user(client, email="bruno@exemplo.com", username="bruno")
+def test_admin_route_accepts_an_admin(client: ApiClient, route: ProtectedRoute) -> None:
+    admin = register_admin(client)
+    target = register_user(client, email="bruno@exemplo.com", username="bruno")
 
-    response = await client.request(
+    response = client.request(
         route.method, route.url(target.id), headers=admin.auth, json=route.body
     )
 
     assert response.status_code in {200, 201, 204}, f"{route} recusou um administrador"
 
 
-async def test_one_user_never_reaches_another(client: AsyncClient) -> None:
+def test_one_user_never_reaches_another(client: ApiClient) -> None:
     """`/users/me` resolve pelo token, não por um id vindo do cliente.
 
     Não existe rota que aceite o id de outro usuário — é assim que o escopo
     deixa de ser uma checagem que alguém pode esquecer.
     """
-    ana = await register_user(client)
-    bruno = await register_user(client, email="bruno@exemplo.com", username="bruno")
+    ana = register_user(client)
+    bruno = register_user(client, email="bruno@exemplo.com", username="bruno")
 
-    ana_sees = await client.get("/api/v1/users/me", headers=ana.auth)
-    bruno_sees = await client.get("/api/v1/users/me", headers=bruno.auth)
+    ana_sees = client.get("/api/v1/users/me", headers=ana.auth)
+    bruno_sees = client.get("/api/v1/users/me", headers=bruno.auth)
 
     assert ana_sees.json()["id"] == ana.id
     assert bruno_sees.json()["id"] == bruno.id
     assert ana.id != bruno.id
 
 
-async def test_every_route_is_declared_in_this_matrix(app: FastAPI) -> None:
+def test_every_route_is_declared_in_this_matrix(app: FastAPI) -> None:
     """Impede que uma rota nova entre sem que alguém decida quem a acessa.
 
     A enumeração vem do schema OpenAPI, não de `app.routes`: o FastAPI guarda
