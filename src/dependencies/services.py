@@ -18,6 +18,7 @@ from core.security import PasswordHasher, TokenCodec
 from dependencies.database import get_session
 from dependencies.repositories import (
     get_admin_user_repository,
+    get_balance_repository,
     get_category_repository,
     get_refresh_token_repository,
     get_transaction_repository,
@@ -25,12 +26,14 @@ from dependencies.repositories import (
 )
 from dependencies.state import get_app_settings, get_clock, get_password_hasher, get_token_codec
 from repositories.admin_user_repository import AdminUserRepository
+from repositories.balance_repository import BalanceRepository
 from repositories.category_repository import CategoryRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.transaction_repository import TransactionRepository
 from repositories.user_repository import UserRepository
 from services.admin_user_service import AdminUserService
 from services.auth_service import AuthService
+from services.balance_service import BalanceService
 from services.category_service import CategoryService
 from services.transaction_service import TransactionService
 from services.user_service import UserService
@@ -61,6 +64,14 @@ def get_category_service(
     categories: CategoryRepository = Depends(get_category_repository),
 ) -> CategoryService:
     return CategoryService(session=session, categories=categories)
+
+
+def get_balance_service(
+    balances: BalanceRepository = Depends(get_balance_repository),
+    clock: Clock = Depends(get_clock),
+) -> BalanceService:
+    """Sem sessão: as três consultas de saldo são leitura, e não há o que commitar."""
+    return BalanceService(balances=balances, clock=clock)
 
 
 def get_transaction_service(
