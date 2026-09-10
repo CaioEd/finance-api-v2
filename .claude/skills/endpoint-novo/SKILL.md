@@ -79,9 +79,19 @@ de `tests/integration/`, contra Postgres de verdade:
 
 - **migrations** — lá o schema nasce delas, aqui nasce do `Base.metadata`;
 - **as categorias do sistema**, que a migration insere;
-- `NUMERIC`, agregação com `FILTER` e a semântica de índice parcial;
+- `NUMERIC` e a semântica de índice parcial;
+- **funções de data do Postgres.** `date_trunc` não existe no SQLite e é
+  reimplementada à mão no `sqlite_backend`; quem responde pelo agrupamento
+  mensal de verdade é `tests/integration/test_balance.py`;
 - a violação de chave estrangeira que vira `409 category_in_use`: o SQLite não
   diz *qual* FK falhou, e a resposta sai como `conflict` genérico.
+
+**Endpoint novo que use SQL que o SQLite não tem** (uma função de data, um tipo
+próprio, `generate_series`) exige uma decisão explícita: ou a tradução entra no
+`sqlite_backend` **com teste próprio** — foi o que `date_trunc` recebeu em
+`tests/api/test_balance.py`, porque tradução escrita à mão é código e código sem
+teste quebra calado —, ou o endpoint fica declarado nas matrizes e o seu
+comportamento vai para `tests/integration/`.
 
 Se o comportamento novo depende de um destes, o teste vai para
 `tests/integration/` — e o endpoint continua precisando da declaração nas duas
@@ -90,7 +100,7 @@ matrizes de `tests/api/`.
 ## Comandos
 
 ```bash
-make test-api                  # a suíte de API inteira, sem Docker (~13 s)
+make test-api                  # a suíte de API inteira, sem Docker (~15 s)
 make test-api k=categorias     # um recorte: vai direto para o -k do pytest
 make test                      # tudo, incluindo o que exige Postgres
 ```

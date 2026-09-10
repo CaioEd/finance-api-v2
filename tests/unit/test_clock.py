@@ -14,7 +14,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-from core.clock import Clock, month_range
+from core.clock import (
+    Clock,
+    month_range,
+    months_between,
+    parse_month,
+    shift_month,
+)
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 
@@ -74,3 +80,59 @@ def test_month_range_handles_december() -> None:
     december = month_range(2026, 12)
 
     assert december.last_day == date(2026, 12, 31)
+
+
+# ------------------------------------------------- aritmética de meses (saldos)
+#
+# A série mês a mês é montada sobre estas três funções. O que se cobre aqui são
+# as bordas onde somar mês escorrega: a virada do ano, fevereiro e o mês de 31
+# dias que não existe no seguinte.
+
+
+def test_parse_month_reads_the_api_format() -> None:
+    september = parse_month("2026-09")
+
+    assert september.first_day == date(2026, 9, 1)
+    assert september.last_day == date(2026, 9, 30)
+    assert september.key == "2026-09"
+
+
+def test_parse_month_is_the_inverse_of_key() -> None:
+    """Ida e volta sem perda: é o que permite o mês viajar como string na API."""
+    for key in ("2024-02", "2026-01", "2026-12", "1999-07"):
+        assert parse_month(key).key == key
+
+
+def test_shift_month_crosses_the_year_forward_and_backward() -> None:
+    december = month_range(2026, 12)
+
+    assert shift_month(december, 1).key == "2027-01"
+    assert shift_month(december, -12).key == "2025-12"
+    assert shift_month(december, 0).key == "2026-12"
+
+
+def test_shift_month_does_not_slip_on_short_months() -> None:
+    """Somar mês não é somar 30 dias: de 31 de janeiro chega-se a fevereiro inteiro."""
+    january = month_range(2026, 1)
+
+    february = shift_month(january, 1)
+
+    assert february.first_day == date(2026, 2, 1)
+    assert february.last_day == date(2026, 2, 28)
+
+
+def test_months_between_includes_both_ends() -> None:
+    months = months_between(month_range(2026, 11), month_range(2027, 2))
+
+    assert [month.key for month in months] == ["2026-11", "2026-12", "2027-01", "2027-02"]
+
+
+def test_months_between_a_single_month_is_that_month() -> None:
+    months = months_between(month_range(2026, 9), month_range(2026, 9))
+
+    assert [month.key for month in months] == ["2026-09"]
+
+
+def test_months_between_inverted_ends_is_empty() -> None:
+    """Vazio, não erro: quem recebeu o pedido do usuário é que decide se isso é 422."""
+    assert months_between(month_range(2026, 9), month_range(2026, 8)) == []

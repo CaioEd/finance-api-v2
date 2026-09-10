@@ -11,10 +11,12 @@ verdade, e é por isso que aquela suíte não desaparece:
 - o schema, que lá nasce das migrations e aqui nasce do `Base.metadata` —
   migration quebrada precisa reprovar o build, e `create_all` esconde isso;
 - as categorias do sistema, dado de referência que a migration insere;
-- `NUMERIC`, agregação com `FILTER` e a semântica de índice parcial do
-  Postgres, que a fase 4 vai exercitar.
+- `NUMERIC` e a semântica de índice parcial do Postgres;
+- o agrupamento por mês do saldo: aqui ele passa por um `date_trunc` de
+  mentira (ver abaixo), e quem responde por ele de verdade é
+  `tests/integration/test_balance.py`.
 
-Três traduções bastam para que o mesmo código de aplicação rode nos dois bancos
+Cinco traduções bastam para que o mesmo código de aplicação rode nos dois bancos
 sem uma linha de `if`:
 
 1. **`gen_random_uuid()` não existe no SQLite.** O `server_default` sai do
@@ -27,6 +29,15 @@ sem uma linha de `if`:
    `datetime` ingênuo; `RefreshToken.is_usable_at` compara com um instante
    ciente e estouraria em `TypeError`. `UtcDateTime` grava em UTC e devolve
    ciente, que é o que a coluna faz em produção.
+4. **`date_trunc('month', …)`**, de que `BalanceRepository.monthly_totals`
+   depende, entra como função de usuário na conexão. Ela implementa `month` e
+   **recusa** qualquer outra unidade: improvisar `week` — que no Postgres
+   começa na segunda — faria a suíte afirmar um agrupamento que a produção não
+   produz.
+5. **`CAST(… AS DATE)`**, que acompanha o `date_trunc`, vira nada. `DATE` não é
+   tipo do SQLite: o nome cai em afinidade NUMERIC, e o CAST passa a valer a
+   regra do prefixo numérico — `'2026-09-01'` viraria `2026`, e o saldo mensal
+   sairia agrupado por ano sem ninguém notar.
 
 E uma adaptação de mensagem: o Postgres nomeia a constraint violada, e
 `repositories.user_repository.translate_integrity_error` lê esse nome para
@@ -46,7 +57,9 @@ from sqlalchemy import MetaData, Table, UniqueConstraint, event, types
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.sql.expression import Cast
 
 from core.database import NAMING_CONVENTION, Base, Database
 
@@ -59,6 +72,7 @@ from models import user as _user  # noqa: F401
 
 if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect, ExceptionContext
+    from sqlalchemy.sql.compiler import SQLCompiler
 
 IN_MEMORY_URL = "sqlite+aiosqlite://"
 """Sem caminho: o banco vive dentro da conexão e morre junto com ela."""
@@ -161,6 +175,7 @@ def sqlite_engine() -> AsyncEngine:
     dialect.colspecs = {**dialect.colspecs, types.DateTime: UtcDateTime}
 
     event.listen(engine.sync_engine, "connect", _enforce_foreign_keys)
+    event.listen(engine.sync_engine, "connect", _register_date_trunc)
     event.listen(engine.sync_engine, "handle_error", _name_the_violated_constraint)
     return engine
 
@@ -173,6 +188,57 @@ def _enforce_foreign_keys(dbapi_connection: Any, _record: Any) -> None:
     seria exercitado por teste nenhum.
     """
     dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+
+MONTH = "month"
+
+
+def _date_trunc(unit: str, value: str | None) -> str | None:
+    """O `date_trunc` do Postgres, na única forma de que a aplicação precisa.
+
+    `BalanceRepository.monthly_totals` agrupa o saldo por
+    `date_trunc('month', occurred_on)`, e o SQLite não tem a função. Como
+    `occurred_on` é `DATE` — texto `YYYY-MM-DD` —, truncar no mês é recortar os
+    sete primeiros caracteres.
+
+    Recusa qualquer outra unidade em vez de improvisar. `date_trunc('week', …)`
+    tem regra própria no Postgres (a semana começa na segunda), e devolver algo
+    plausível faria esta suíte afirmar um agrupamento que a produção não
+    produz — que é o modo exato como um banco de teste diferente do de produção
+    passa a mentir.
+    """
+    if value is None:
+        return None
+    if unit != MONTH:
+        raise ValueError(f"o date_trunc desta suíte só implementa {MONTH!r}, não {unit!r}")
+    return f"{value[:7]}-01"
+
+
+def _register_date_trunc(dbapi_connection: Any, _record: Any) -> None:
+    dbapi_connection.create_function("date_trunc", 2, _date_trunc)
+
+
+@compiles(Cast, "sqlite")
+def _cast_to_date_is_noise(element: Cast, compiler: SQLCompiler, **kw: Any) -> str:
+    """`CAST(x AS DATE)` no SQLite destrói a data; aqui ele desaparece.
+
+    `DATE` não é um tipo do SQLite: o nome cai em afinidade NUMERIC, e o CAST
+    passa a valer a regra do prefixo numérico — `CAST('2026-09-01' AS DATE)` é
+    `2026`. O saldo mensal sairia agrupado por ano, com a resposta ainda no
+    formato certo e os números errados.
+
+    Não há o que converter: a coluna guarda a data como texto e `_date_trunc`
+    devolve texto no mesmo formato, que é o que o processador de resultado do
+    SQLAlchemy espera de um `Date`. O CAST é ruído, e o único efeito dele seria
+    perder o mês e o dia.
+
+    Registrado para o dialeto `sqlite` e só para ele: a suíte de integração
+    compila em `postgresql`, onde este código não roda. Qualquer outro CAST,
+    inclusive em SQLite, segue pelo compilador normal.
+    """
+    if isinstance(element.type, types.Date):
+        return compiler.process(element.clause, **kw)
+    return compiler.visit_cast(element, **kw)
 
 
 def _name_the_violated_constraint(context: ExceptionContext) -> IntegrityError | None:

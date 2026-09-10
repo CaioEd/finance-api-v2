@@ -61,11 +61,12 @@ São **três** suítes, e duas delas não tocam em banco externo:
   `Base.metadata` e destruído a cada teste. É onde mora o contrato HTTP: as duas matrizes (quem
   alcança cada rota, o que cada rota faz) e a checagem de que todo endpoint é exercitado. No fim da
   rodada ela imprime quantos endpoints receberam um 2xx e quantos ficaram sem cobertura.
-  `tests/api/sqlite_backend.py` documenta as três traduções de schema e os seus limites.
+  `tests/api/sqlite_backend.py` documenta as cinco traduções de schema e os seus limites; as que
+  são código escrito à mão têm teste próprio em `tests/api/test_balance.py`.
 - `tests/integration/` — **Postgres real** (serviço `db-test`, porta 5433, dados em tmpfs). Fica
   aqui tudo que o SQLite não reproduz, e é por isso que esta suíte não some: migrations (lá o
   schema nasce delas), as categorias do sistema semeadas por migration, índice parcial, `NUMERIC` e
-  agregação com `FILTER`. `make db-test` sobe só esse banco. A URL vem de `TEST_DATABASE_URL`, cujo
+  as funções de data (`date_trunc`, que o saldo mensal usa). `make db-test` sobe só esse banco. A URL vem de `TEST_DATABASE_URL`, cujo
   default mora em `tests/integration/conftest.py` — junto de todos os fixtures que abrem conexão. O
   conftest raiz não pode ter nenhum, sob pena de a suíte unitária voltar a exigir banco.
 

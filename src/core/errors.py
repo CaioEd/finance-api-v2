@@ -149,6 +149,22 @@ class TransactionNotFoundError(NotFoundError):
     message = "Lançamento não encontrado."
 
 
+class InvalidPeriodError(UnprocessableError):
+    code = "invalid_period"
+    message = "O início do período não pode ser posterior ao fim."
+    # 422 e não 404: o pedido é sintaticamente válido e não aponta para recurso
+    # nenhum — o que está errado é a combinação das duas pontas, e só o serviço
+    # de saldos enxerga isso.
+
+
+class PeriodTooLongError(UnprocessableError):
+    code = "period_too_long"
+    message = "O período pedido é longo demais."
+    # A série mês a mês devolve uma linha por mês do intervalo, inclusive os
+    # vazios. Sem teto, `from_month=0001-01` pediria vinte e quatro mil linhas
+    # de zero — resposta cara de montar e inútil de ler.
+
+
 class ServiceUnavailableError(DomainError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "service_unavailable"

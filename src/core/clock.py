@@ -66,3 +66,51 @@ class Clock:
     def current_month(self) -> MonthRange:
         today = self.today()
         return month_range(today.year, today.month)
+
+
+MONTH_KEY_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+"""A forma de um mês na API: `YYYY-MM`.
+
+Mora aqui, junto de `MonthRange.key`, porque quem escreve o formato e quem o lê
+têm de concordar. A borda usa isto como `pattern` do parâmetro de consulta, e é
+o que faz `"2026-13"` sair como 422 com o campo apontado em vez de chegar
+inteiro até `parse_month`.
+"""
+
+
+def parse_month(key: str) -> MonthRange:
+    """`"2026-09"` → o mês civil correspondente.
+
+    A validação de forma é da borda (`MONTH_KEY_PATTERN`); o `ValueError` que
+    `int` e `month_range` levantam cobre só o que escapar dela.
+    """
+    year, _, month = key.partition("-")
+    return month_range(int(year), int(month))
+
+
+def shift_month(month: MonthRange, offset: int) -> MonthRange:
+    """O mês `offset` meses adiante — ou atrás, se negativo.
+
+    Contado sobre um índice absoluto de meses, e não somando 30 dias: o
+    aritmético não escorrega em fevereiro nem na virada do ano.
+    """
+    index = month.first_day.year * 12 + month.first_day.month - 1 + offset
+    return month_range(index // 12, index % 12 + 1)
+
+
+def months_between(first: MonthRange, last: MonthRange) -> list[MonthRange]:
+    """Todos os meses de `first` a `last`, inclusive nas duas pontas.
+
+    Devolve a série **sem buraco**: é o que permite ao saldo mês a mês
+    apresentar o mês sem lançamento nenhum como zero, em vez de omiti-lo e
+    deixar quem consome adivinhar se faltou dado ou faltou gasto.
+
+    `first` posterior a `last` devolve lista vazia; quem recebe o pedido do
+    usuário é que decide se isso é um erro (e o serviço de saldos decide que é).
+    """
+    months: list[MonthRange] = []
+    current = first
+    while current.first_day <= last.first_day:
+        months.append(current)
+        current = shift_month(current, 1)
+    return months
