@@ -187,20 +187,24 @@ def test_text_with_markup_characters_survives_intact() -> None:
 # ------------------------------------------------------------------- a marca
 
 
-def test_without_a_logo_the_header_shows_the_application_name() -> None:
+def test_without_a_logo_the_header_shows_the_brand_name() -> None:
     text = text_of(render_pdf(a_document(brand=Brand(name="minhas-financas"))))
 
     assert "minhas-financas" in text
 
 
-def test_a_readable_logo_replaces_the_name(tmp_path: Path) -> None:
-    """Com imagem, a faixa é a imagem: o nome sairia repetido ao lado dela."""
+def test_a_readable_logo_comes_with_the_name_beside_it(tmp_path: Path) -> None:
+    """A logo acompanha o nome, não o substitui.
+
+    Símbolo sozinho não diz de quem é a folha para quem a recebe impressa — e o
+    nome é o que sobra numa fotocópia em preto e branco.
+    """
     brand = Brand(name="minhas-financas", logo_path=a_png(tmp_path / "logo.png"))
 
     content = render_pdf(a_document(brand=brand))
 
     assert b"/Subtype /Image" in content, "a logo não foi embutida no arquivo"
-    assert "minhas-financas" not in text_of(content)
+    assert "minhas-financas" in text_of(content)
 
 
 def test_an_unreadable_logo_falls_back_to_the_name(

@@ -110,15 +110,15 @@ def get_report_service(
     discordar dela. O repositório de categorias entra só para escrever o nome da
     categoria filtrada no cabeçalho.
 
-    A marca sai da configuração: `APP_NAME` no topo da folha, e a imagem de
-    `REPORT_LOGO_PATH` no lugar dele quando houver uma.
+    A marca sai da configuração: `REPORT_BRAND_NAME` no topo da folha, com a
+    imagem de `REPORT_LOGO_PATH` ao lado quando houver uma.
     """
     return ReportService(
         transactions=transactions,
         balances=balances,
         categories=categories,
         clock=clock,
-        brand=Brand(name=settings.app_name, logo_path=settings.report_logo_path),
+        brand=Brand(name=settings.report_brand_name, logo_path=settings.report_logo_path),
     )
 
 

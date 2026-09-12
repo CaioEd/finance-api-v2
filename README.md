@@ -235,9 +235,12 @@ que o navegador só entrega ao JavaScript porque a API o declara em `expose_head
 de consumo, com a função de download pronta, os filtros de cada rota e o que mostrar em cada erro,
 está em **[`docs/relatorios-pdf.md`](docs/relatorios-pdf.md)**.
 
-**A logo é sua.** Ponha o arquivo em `assets/logo.png` e aponte `REPORT_LOGO_PATH` para ele (ver
-`assets/README.md`); sem logo configurada, o cabeçalho sai com o `APP_NAME` em texto. Logo ilegível
-não derruba o relatório: vira um aviso no log e o mesmo cabeçalho em texto.
+**A marca é sua.** O alto da folha é o símbolo de `REPORT_LOGO_PATH` (por padrão `assets/logo.png`)
+com `REPORT_BRAND_NAME` escrito ao lado — o nome do produto, não o `APP_NAME`, que identifica o
+serviço e não interessa a quem recebe o extrato. Troque a imagem em `assets/` para pôr a sua (ver
+`assets/README.md`); ela é o símbolo, não o letreiro, então logo com o nome desenhado sai repetida.
+Sem logo, ou com logo ilegível, a faixa sai só com o nome — e no segundo caso um aviso vai para o
+log. O relatório nunca cai por causa da marca.
 
 ### Decisões que quebram se você fizer diferente
 

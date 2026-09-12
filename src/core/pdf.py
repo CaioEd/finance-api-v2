@@ -188,6 +188,15 @@ BOTTOM_MARGIN = 18 * mm
 
 LOGO_HEIGHT = 12 * mm
 LOGO_MAX_WIDTH = 55 * mm
+BRAND_SIZE = 13
+BRAND_GAP = 8
+CAP_RATIO = 0.72
+"""Altura de caixa alta da Helvetica, em fração do corpo.
+
+Serve para centrar o nome pela altura das letras que se veem, e não pela caixa
+da fonte — que inclui descida que "FinanceHub" nem usa.
+"""
+
 
 SANS = "Helvetica"
 SANS_BOLD = "Helvetica-Bold"
@@ -460,26 +469,39 @@ def _paint_frame(
 def _paint_brand(
     canvas: Any, *, logo: _Logo | None, brand: Brand, x: float, baseline: float
 ) -> None:
+    """A marca no alto da folha: o símbolo, quando há um, e o nome sempre.
+
+    O nome fica **ao lado** da imagem, não no lugar dela: a logo é um símbolo, e
+    símbolo sozinho não diz de quem é a folha para quem a recebe impressa. Sem
+    imagem, o lugar dela é uma barra de cor — o alto da folha não pode ficar
+    sendo uma linha de texto solta.
+    """
     if logo is not None:
+        bottom = baseline - logo.height + 9
         canvas.drawImage(
             logo.image,
             x,
-            baseline - logo.height + 9,
+            bottom,
             width=logo.width,
             height=logo.height,
             preserveAspectRatio=True,
             anchor="sw",
             mask="auto",
         )
-        return
+        mark_width = logo.width
+        # Centrado na altura do símbolo: alinhar o nome pela linha de base da
+        # faixa o deixaria boiando no alto de uma marca que é quase três vezes
+        # mais alta que ele.
+        text_baseline = bottom + (logo.height - BRAND_SIZE * CAP_RATIO) / 2
+    else:
+        canvas.setFillColor(ACCENT)
+        canvas.rect(x, baseline - 1, 3, BRAND_SIZE, stroke=0, fill=1)
+        mark_width = 3
+        text_baseline = baseline + 1
 
-    # Sem imagem, a marca é o nome — com uma barra de cor ao lado, para o alto
-    # da folha não ficar sendo uma linha de texto solta.
-    canvas.setFillColor(ACCENT)
-    canvas.rect(x, baseline - 1, 3, 13, stroke=0, fill=1)
-    canvas.setFont(SANS_BOLD, 13)
+    canvas.setFont(SANS_BOLD, BRAND_SIZE)
     canvas.setFillColor(INK)
-    canvas.drawString(x + 7, baseline + 1, brand.name)
+    canvas.drawString(x + mark_width + BRAND_GAP, text_baseline, brand.name)
 
 
 def _page_label(page: int, total_pages: int | None) -> str:

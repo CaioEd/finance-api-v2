@@ -53,8 +53,16 @@ class Settings(BaseSettings):
     docs_enabled: bool = True
 
     # --- Relatórios --------------------------------------------------------
+    report_brand_name: str = "FinanceHub"
+    """Nome no topo dos PDFs — a marca do produto, não a da API.
+
+    Separado de `app_name` de propósito: `app_name` identifica o serviço (título
+    do OpenAPI, log), e quem recebe o extrato impresso não tem nada a ver com o
+    nome do processo que o gerou.
+    """
+
     report_logo_path: Path | None = None
-    """Imagem no topo dos PDFs. Ausente, o cabeçalho sai com `app_name` em texto.
+    """Símbolo ao lado do nome, no topo dos PDFs. Ausente, fica só o nome.
 
     Opcional de propósito: a logo é da marca de quem hospeda, não do código, e
     um default apontando para um arquivo que o repositório não tem faria todo
