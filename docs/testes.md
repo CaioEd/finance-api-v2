@@ -2,21 +2,23 @@
 
 Os tipos que existem, o que cada um cobre e como rodá-los.
 
-Para **números de cobertura** e o que ainda não é testado, veja `cobertura-de-testes.md`.
+Para **números de cobertura** e o que ainda não é testado, veja `cobertura-de-testes.md`; para
+consumir os relatórios em PDF do lado do front, `relatorios-pdf.md`.
 
 ## Os tipos
 
 | Tipo | O que cobre | Onde | Testes | Postgres |
 |---|---|---|---|---|
-| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso | `tests/unit/` | 146 | não |
-| **Matriz de autorização** | **quem** alcança cada rota: anônimo, autenticado e admin × rota pública, protegida e de admin | `tests/api/test_authorization_matrix.py` | 90 | não |
+| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso | `tests/unit/` | 192 | não |
+| **Matriz de autorização** | **quem** alcança cada rota: anônimo, autenticado e admin × rota pública, protegida e de admin | `tests/api/test_authorization_matrix.py` | 102 | não |
 | **Matriz de CRUD** | **o que** cada rota faz: criar → ler → listar → atualizar → excluir, os 404/422 e o PATCH parcial | `tests/api/test_crud_contract.py` | 57 | não |
 | **Tradução do SQLite** | o agrupamento mensal do saldo, única consulta que depende de uma função traduzida à mão | `tests/api/test_balance.py` | 4 | não |
+| **Relatórios em PDF** | a travessia inteira: a query string vira recorte, o recorte vira folha, e a folha chega com os cabeçalhos que fazem o navegador baixar | `tests/api/test_reports.py` | 12 | não |
 | **Operacionais** | liveness e readiness | `tests/api/test_health.py` | 2 | não |
 | **Contrato de domínio** | o que só aquele recurso faz: rotação de refresh, categoria do sistema vs. do usuário, o saldo agregado e o seu escopo por dono | `tests/integration/test_auth.py`, `test_users.py`, `test_categories.py`, `test_admin_users.py`, `test_balance.py` | 107 | sim |
 | **Infraestrutura** | migrations, envelope de erro, health contra o banco real e o `seed-dev` | `tests/integration/test_health.py`, `test_error_envelope.py`, `test_dev_seed.py` | 14 | sim |
 
-Os cinco primeiros tipos — 299 dos 420 testes — rodam **sem Docker e sem banco nenhum**. Só o que
+Os seis primeiros tipos — 369 dos 490 testes — rodam **sem Docker e sem banco nenhum**. Só o que
 depende do Postgres de verdade (migrations, dado semeado por migration, `NUMERIC`, índice parcial e
 o `date_trunc` do saldo mensal) sobe o serviço `db-test`.
 
@@ -31,7 +33,7 @@ criado e destruído a cada teste. Ela existe para que o contrato HTTP — rota, 
 erro, forma da resposta, escopo por dono — possa ser verificado numa máquina sem Docker.
 
 ```bash
-make test-api                                 # os 153 testes, ~15 s, sem Docker nem banco
+make test-api                                 # os 177 testes, ~20 s, sem Docker nem banco
 make test-api k=categorias                    # um recorte; vai direto para o -k do pytest
 .venv/bin/pytest tests/api                    # o mesmo, chamando o pytest na mão
 ```
@@ -41,12 +43,16 @@ cobertura** — um endpoint só conta como coberto quando alguma requisição re
 
 ```
 ------------------------ cobertura de endpoints da API -------------------------
-27 de 27 endpoints cobertos (100%)
+30 de 30 endpoints cobertos (100%)
 ```
 
 Endpoint novo entra nessa lista como lacuna até alguém escrever o teste. O relatório não reprova a
 rodada; o passo a passo para fechar a lacuna está na skill `endpoint-novo`
 (`.claude/skills/endpoint-novo/`).
+
+A suíte também lê de volta o texto dos PDFs que gera (`tests/pdf_text.py`): um relatório só passa
+quando os números **saíram na folha**, e não quando os bytes começam com `%PDF-` — o que passaria
+igual com a folha em branco ou com o extrato de outra pessoa.
 
 O SQLite é uma **tradução** do schema, não o banco de produção — `tests/api/sqlite_backend.py`
 documenta as cinco diferenças (`gen_random_uuid()`, índice parcial, `TIMESTAMPTZ`, `date_trunc` e o
@@ -66,8 +72,8 @@ O banco de teste sobe sozinho. Não existe passo de preparação em nenhum alvo.
 ## Rodar só um tipo
 
 ```bash
-make test-unit                                      # os 146 unitários, ~1 s, sem Docker
-make test-api                                       # os 153 de API, ~15 s, sem Docker
+make test-unit                                      # os 192 unitários, ~2 s, sem Docker
+make test-api                                       # os 177 de API, ~20 s, sem Docker
 make test-integration                               # tudo que exige Postgres
 
 .venv/bin/pytest -m "not integration"               # unitários + API: tudo que dispensa banco
@@ -126,7 +132,7 @@ No Windows o executável é `.venv\Scripts\pytest`; com o venv ativo, basta `pyt
 
 - **Escrevendo regra pura** (serviço, schema, `Clock`, `Settings`) → `make test-unit`. Sete décimos
   de segundo, sem Docker: dá para rodar a cada salvamento.
-- **Mexeu em rota, endpoint ou contrato de entrada e saída** → `make test-api`. Treze segundos,
+- **Mexeu em rota, endpoint ou contrato de entrada e saída** → `make test-api`. Vinte segundos,
   sem Docker: é a suíte que exercita a API inteira.
 - **Mexeu em repositório, model ou migration** → `make test-integration`. Nem o unitário nem a suíte
   de API enxergam o schema do Postgres, e as duas ficam verdes com uma migration quebrada.

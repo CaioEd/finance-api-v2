@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.clock import Clock
 from core.config import Settings
+from core.pdf import Brand
 from core.security import PasswordHasher, TokenCodec
 from dependencies.database import get_session
 from dependencies.repositories import (
@@ -35,6 +36,7 @@ from services.admin_user_service import AdminUserService
 from services.auth_service import AuthService
 from services.balance_service import BalanceService
 from services.category_service import CategoryService
+from services.report_service import ReportService
 from services.transaction_service import TransactionService
 from services.user_service import UserService
 
@@ -91,6 +93,32 @@ def get_transaction_service(
         transactions=transactions,
         categories=categories,
         clock=clock,
+    )
+
+
+def get_report_service(
+    transactions: TransactionService = Depends(get_transaction_service),
+    balances: BalanceService = Depends(get_balance_service),
+    categories: CategoryRepository = Depends(get_category_repository),
+    clock: Clock = Depends(get_clock),
+    settings: Settings = Depends(get_app_settings),
+) -> ReportService:
+    """Relatório depende dos **serviços**, não dos repositórios.
+
+    É a fiação que garante a decisão do `report_service`: o PDF nasce da mesma
+    resposta que a tela recebe, e não de uma segunda consulta que poderia
+    discordar dela. O repositório de categorias entra só para escrever o nome da
+    categoria filtrada no cabeçalho.
+
+    A marca sai da configuração: `APP_NAME` no topo da folha, e a imagem de
+    `REPORT_LOGO_PATH` no lugar dele quando houver uma.
+    """
+    return ReportService(
+        transactions=transactions,
+        balances=balances,
+        categories=categories,
+        clock=clock,
+        brand=Brand(name=settings.app_name, logo_path=settings.report_logo_path),
     )
 
 

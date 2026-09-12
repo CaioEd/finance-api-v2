@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -51,6 +52,17 @@ class Settings(BaseSettings):
     debug: bool = False
     docs_enabled: bool = True
 
+    # --- Relatórios --------------------------------------------------------
+    report_logo_path: Path | None = None
+    """Imagem no topo dos PDFs. Ausente, o cabeçalho sai com `app_name` em texto.
+
+    Opcional de propósito: a logo é da marca de quem hospeda, não do código, e
+    um default apontando para um arquivo que o repositório não tem faria todo
+    relatório nascer com um aviso no log. Caminho relativo é resolvido a partir
+    do diretório de trabalho do processo — `assets/logo.png` funciona tanto no
+    `make api` quanto no container, que roda em `/app`.
+    """
+
     # --- HTTP ------------------------------------------------------------
     allowed_hosts: CsvList = ["*"]
     cors_origins: CsvList = []
@@ -78,6 +90,18 @@ class Settings(BaseSettings):
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("report_logo_path", mode="before")
+    @classmethod
+    def _blank_path_is_no_logo(cls, value: object) -> object:
+        """`REPORT_LOGO_PATH=` no `.env` é ausência, não o caminho vazio.
+
+        Sem isto a variável declarada e não preenchida viraria `Path(".")` — um
+        diretório, que o leitor de imagem recusaria a cada relatório gerado.
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @field_validator("app_timezone")

@@ -69,6 +69,12 @@ NOT_CRUD: set[tuple[str, str]] = {
     ("GET", "/api/v1/balance/current"),
     ("GET", "/api/v1/balance/monthly"),
     ("GET", "/api/v1/balance/range"),
+    # Relatórios: exportam em PDF o recorte que as rotas de leitura já devolvem
+    # em JSON. Não criam, não guardam e não têm id — o que elas prometem está em
+    # `test_reports.py`.
+    ("GET", "/api/v1/reports/transactions"),
+    ("GET", "/api/v1/reports/balance/monthly"),
+    ("GET", "/api/v1/reports/balance/range"),
 }
 
 

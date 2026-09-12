@@ -79,6 +79,11 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            # Sem isto o front noutra origem baixa o PDF e não consegue ler o
+            # nome do arquivo: o navegador esconde do JavaScript todo cabeçalho
+            # de resposta que não esteja nesta lista, e o download sairia como
+            # um blob sem nome. Ver `api/routes/reports.py`.
+            expose_headers=["Content-Disposition"],
         )
 
     app.include_router(health_router)
