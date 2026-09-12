@@ -9,17 +9,22 @@ Uma trava vive aqui e não no router: **administrador não age sobre a própria
 conta por estas rotas**. Como quem chega até aqui já é admin e não consegue se
 rebaixar nem se excluir, sempre resta pelo menos um administrador ativo — a
 garantia sai de graça, sem contar linhas na tabela a cada requisição.
+
+E outra: **desativar encerra as sessões**, em vez de só suspendê-las. Ver
+`update_user`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
+from core.clock import Clock
 from core.errors import SelfTargetError, UserNotFoundError
 from core.security import PasswordHasher
 from models.user import User
@@ -42,6 +47,12 @@ class AdminUserStore(Protocol):
     def add(self, user: User) -> None: ...
 
     async def delete(self, user: User) -> None: ...
+
+
+class TokenRevoker(Protocol):
+    """O que este serviço precisa dos refresh tokens: encerrar as sessões de alguém."""
+
+    async def revoke_all_for_user(self, user_id: UUID, *, at: datetime) -> None: ...
 
 
 class Transaction(Protocol):
@@ -70,11 +81,15 @@ class AdminUserService:
         *,
         transaction: Transaction,
         users: AdminUserStore,
+        tokens: TokenRevoker,
         hasher: PasswordHasher,
+        clock: Clock,
     ) -> None:
         self._transaction = transaction
         self._users = users
+        self._tokens = tokens
         self._hasher = hasher
+        self._clock = clock
 
     async def list_users(self, *, filters: UserFilters, limit: int, offset: int) -> UserPage:
         items = await self._users.list_users(filters=filters, limit=limit, offset=offset)
@@ -101,6 +116,13 @@ class AdminUserService:
         changes = data.changes()
         for field, value in changes.items():
             setattr(user, field, value)
+
+        if changes.get("is_active") is False:
+            # Desativar já barra a conta na hora: `get_current_user` e o refresh
+            # checam `is_active`. Revogar é pelo dia da reativação — sem isto, as
+            # sessões de antes voltariam junto, inclusive a de quem motivou a
+            # desativação. Mesmo commit: se a alteração falhar, nada é revogado.
+            await self._tokens.revoke_all_for_user(user.id, at=self._clock.now_utc())
 
         await self._commit()
         return user

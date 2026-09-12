@@ -217,6 +217,7 @@ PROTECTED_ROUTES = [
         body={"current_password": "senha-bem-comprida", "new_password": "outra-senha-longa"},
     ),
     ProtectedRoute("DELETE", "/api/v1/users/me", body={"password": "senha-bem-comprida"}),
+    ProtectedRoute("POST", "/api/v1/users/me/logout-all"),
     ProtectedRoute("GET", "/api/v1/categories"),
     ProtectedRoute("POST", "/api/v1/categories", body={"name": "Padaria", "kind": "expense"}),
     ProtectedRoute("GET", "/api/v1/categories/{category_id}", setup=a_category_of),
