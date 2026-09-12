@@ -15,8 +15,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
-    # Geração de PDF (fase 5). Fica confinada a `core/pdf.py`: é o único módulo
-    # do projeto que a importa, e é o que permite trocá-la sem tocar em domínio.
+    # Relatórios em PDF; só core/pdf.py importa.
     "reportlab>=4.2",
 ]
 
@@ -110,10 +109,7 @@ warn_unreachable = true
 show_error_codes = true
 plugins = ["pydantic.mypy"]
 
-# O reportlab não publica tipos (nem `py.typed`, nem stubs oficiais), então os
-# símbolos dele chegam como `Any`. Fica contido: quem o importa é só
-# `core/pdf.py`, e nada de reportlab atravessa a fronteira desse módulo — o
-# domínio conversa com ele por dataclasses tipadas (`Document`, `TableBlock`).
+# O reportlab não publica tipos; fica contido em core/pdf.py.
 [[tool.mypy.overrides]]
 module = ["reportlab.*"]
 ignore_missing_imports = true

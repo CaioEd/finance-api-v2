@@ -11,7 +11,7 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **96%** — 2013 linhas executáveis, 73 sem cobertura |
+| **Cobertura total** | **96%** — 2003 linhas executáveis, 73 sem cobertura |
 | Suíte | 490 testes: 192 unitários, 177 de API, 121 de integração (2 pulados) |
 | Sem Postgres (`-m "not integration"`) | 92% — os 369 testes que rodam sem Docker |
 | Só os unitários | 55% — e está certo assim: unitário cobre regra, não fiação |
@@ -43,7 +43,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `api/routes/balance.py` | 30 | 100% |
 | `api/routes/categories.py` | 35 | 100% |
 | `api/routes/health.py` | 26 | 92% |
-| `api/routes/reports.py` | 38 | 100% |
+| `api/routes/reports.py` | 37 | 100% |
 | `api/routes/transactions.py` | 36 | 100% |
 | `api/routes/users.py` | 23 | 100% |
 | `cli.py` | 89 | 50% |
@@ -51,7 +51,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `core/config.py` | 90 | 96% |
 | `core/database.py` | 28 | 96% |
 | `core/errors.py` | 112 | 98% |
-| `core/pdf.py` | 197 | 100% |
+| `core/pdf.py` | 192 | 100% |
 | `core/security.py` | 72 | 95% |
 | `dependencies/auth.py` | 27 | 100% |
 | `dependencies/database.py` | 9 | 67% |
@@ -79,14 +79,14 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `services/auth_service.py` | 89 | 91% |
 | `services/balance_service.py` | 63 | 100% |
 | `services/category_service.py` | 49 | 100% |
-| `services/report_service.py` | 106 | 100% |
+| `services/report_service.py` | 102 | 100% |
 | `services/transaction_service.py` | 71 | 100% |
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
 30 dos 46 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
 `auth_service`, tratada abaixo. Os três módulos que a fase 5 acrescenta entram em 100%: o
-renderizador (`core/pdf.py`, 197 linhas), a regra (`services/report_service.py`) e as rotas
+renderizador (`core/pdf.py`, 192 linhas), a regra (`services/report_service.py`) e as rotas
 (`api/routes/reports.py`). Nenhum repositório ficou abaixo de 94%.
 
 ## O que não está coberto
@@ -104,11 +104,11 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `services/auth_service.py:93` | rehash da senha quando o custo do argon2 mudou |
 | `core/security.py:154-155` | access token sem os claims obrigatórios |
 | `core/security.py:66-67` | `verify()` diante de um hash corrompido (`InvalidHashError`) |
-| `core/config.py:135` | `JWT_SECRET_KEY` com menos de 32 caracteres |
-| `core/errors.py:236-237` | handler de exceção não tratada — o `500` genérico |
+| `core/config.py:119` | `JWT_SECRET_KEY` com menos de 32 caracteres |
+| `core/errors.py:231-232` | handler de exceção não tratada — o `500` genérico |
 | `api/routes/health.py:46-47` | readiness quando o banco não responde |
 | `repositories/user_repository.py:55`, `category_repository.py:72`, `transaction_repository.py:134` | o erro genérico para constraint desconhecida |
-| `core/config.py:150` | `is_production` |
+| `core/config.py:134` | `is_production` |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
 
 **A listagem de lançamentos não tem mais filtro sem teste.** Os dois que faltavam — por tipo e por
@@ -159,7 +159,7 @@ exatamente onde um erro não aparece em teste manual e vira brecha em produção
 | `models/refresh_token.py:55` (`is_usable_at`) | **nada no código chama esta property** — `AuthService.refresh` checa `revoked_at` e `expires_at` direto |
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
 | `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness |
-| `core/config.py:156` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
+| `core/config.py:140` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
 | `main.py:76` | o middleware de CORS só entra quando `CORS_ORIGINS` não é vazio, e a configuração de teste o deixa vazio |
 | `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:121` | `__repr__`, texto de depuração |
 

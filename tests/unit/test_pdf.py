@@ -1,18 +1,4 @@
-"""O renderizador de PDF — o desenho, sem domínio nenhum por perto.
-
-`core.pdf` recebe texto e devolve bytes, então é aqui que se verifica o que só
-ele promete: que o arquivo é um PDF válido, que a tabela longa quebra em páginas
-repetindo o cabeçalho, que o rodapé numera as páginas com o total certo, e que a
-faixa de topo sai com a logo quando há uma e com o nome quando não há.
-
-As afirmações são sobre o **texto que saiu na folha**, lido de volta com
-`tests.pdf_text`. Conferir só o tamanho do arquivo, ou só o `%PDF-` do começo,
-passaria igual com a folha em branco.
-
-Não abre conexão nenhuma — a única I/O é o arquivo de imagem que dois testes
-escrevem em `tmp_path`, e ele existe justamente porque o caminho da logo é um
-caminho de disco de verdade na aplicação.
-"""
+"""O renderizador de PDF, verificado pelo texto que sai na folha (`tests.pdf_text`)."""
 
 from __future__ import annotations
 
@@ -66,7 +52,6 @@ def a_document(
 
 
 def a_png(path: Path) -> Path:
-    """Uma imagem de verdade, mínima. O Pillow vem junto com o reportlab."""
     from PIL import Image
 
     image = Image.new("RGB", (240, 80), (15, 118, 110))
@@ -101,7 +86,6 @@ def test_the_rows_reach_the_sheet() -> None:
 
 
 def test_a_document_without_filters_prints_none() -> None:
-    """Nem todo relatório declara filtro; sem nenhum, não sai rótulo solto no alto."""
     text = text_of(render_pdf(a_document(filters=())))
 
     assert "Lançamentos" in text, "a folha sem filtros perdeu o título junto"
@@ -109,7 +93,6 @@ def test_a_document_without_filters_prints_none() -> None:
 
 
 def test_the_generation_stamp_and_the_owner_are_on_the_page() -> None:
-    """A data e o dono vêm prontos do domínio, e o renderizador os desenha em toda folha."""
     text = text_of(render_pdf(a_document()))
 
     assert "Gerado em 12/09/2026 às 14:33" in text
@@ -120,7 +103,6 @@ def test_the_generation_stamp_and_the_owner_are_on_the_page() -> None:
 
 
 def test_a_long_table_breaks_into_pages_repeating_the_header() -> None:
-    """O cabeçalho da tabela se repete: folha 4 sem ele é uma lista de números sem coluna."""
     content = render_pdf(a_document(rows=200))
     pages = page_count(content)
     text = text_of(content)
@@ -130,7 +112,6 @@ def test_a_long_table_breaks_into_pages_repeating_the_header() -> None:
 
 
 def test_the_footer_numbers_every_page_with_the_real_total() -> None:
-    """ "Página 2 de 7" é o que a segunda passada de renderização existe para dizer."""
     content = render_pdf(a_document(rows=200))
     pages = page_count(content)
     text = text_of(content)
@@ -167,18 +148,11 @@ def test_a_note_is_printed_as_it_is() -> None:
 
 
 def test_text_with_markup_characters_survives_intact() -> None:
-    """Célula que quebra linha vira `Paragraph`, que lê marcação — e `&` é marcação.
-
-    Sem o escape, `Mercado & Cia <matriz>` ou some da folha ou derruba a
-    renderização com erro de parse, dependendo do que a pessoa digitou na
-    descrição do lançamento.
-    """
+    """Célula com `wrap` vira Paragraph, que interpreta marcação."""
     table = TableBlock(columns=COLUMNS, rows=[["01/09/2026", "Mercado & Cia <matriz>", "10,00"]])
 
     text = text_of(render_pdf(a_document(blocks=[table])))
 
-    # Por trecho, e não pela frase inteira: quem decide onde a linha se parte em
-    # pedaços é o reportlab, e `tests.pdf_text` os une com espaço.
     assert "Mercado" in text and "&" in text
     assert "matriz" in text, "o <matriz> foi lido como marcação e sumiu da folha"
     assert "&amp;" not in text and "&lt;" not in text, "a entidade vazou para a folha"
@@ -194,11 +168,6 @@ def test_without_a_logo_the_header_shows_the_brand_name() -> None:
 
 
 def test_a_readable_logo_comes_with_the_name_beside_it(tmp_path: Path) -> None:
-    """A logo acompanha o nome, não o substitui.
-
-    Símbolo sozinho não diz de quem é a folha para quem a recebe impressa — e o
-    nome é o que sobra numa fotocópia em preto e branco.
-    """
     brand = Brand(name="minhas-financas", logo_path=a_png(tmp_path / "logo.png"))
 
     content = render_pdf(a_document(brand=brand))
@@ -210,7 +179,6 @@ def test_a_readable_logo_comes_with_the_name_beside_it(tmp_path: Path) -> None:
 def test_an_unreadable_logo_falls_back_to_the_name(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Logo quebrada não pode derrubar o relatório — ela é aparência, ele é o dado."""
     broken = tmp_path / "logo.png"
     broken.write_bytes(b"isto nao e uma imagem")
     brand = Brand(name="minhas-financas", logo_path=broken)

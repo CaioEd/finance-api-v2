@@ -168,12 +168,7 @@ class PeriodTooLongError(UnprocessableError):
 class ReportTooLargeError(UnprocessableError):
     code = "report_too_large"
     message = "O recorte pedido tem lançamentos demais para um relatório."
-    # 422 pela mesma razão de `PeriodTooLongError`: o pedido é válido e não
-    # aponta para recurso nenhum — o que não cabe é a resposta. Um PDF é um
-    # arquivo inteiro montado na memória do servidor e baixado de uma vez; sem
-    # teto, "exportar tudo" de uma conta antiga viraria centenas de páginas que
-    # ninguém lê e um pico de memória que todo mundo sente. A recusa diz quantos
-    # há e qual é o teto, para quem pediu saber por quanto estreitar o filtro.
+    # 422 como PeriodTooLongError: o pedido é válido, a resposta é que não cabe.
 
 
 class ServiceUnavailableError(DomainError):

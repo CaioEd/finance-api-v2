@@ -54,22 +54,10 @@ class Settings(BaseSettings):
 
     # --- Relatórios --------------------------------------------------------
     report_brand_name: str = "FinanceHub"
-    """Nome no topo dos PDFs — a marca do produto, não a da API.
-
-    Separado de `app_name` de propósito: `app_name` identifica o serviço (título
-    do OpenAPI, log), e quem recebe o extrato impresso não tem nada a ver com o
-    nome do processo que o gerou.
-    """
+    """Nome no topo dos PDFs: a marca do produto. `app_name` é o do serviço."""
 
     report_logo_path: Path | None = None
-    """Símbolo ao lado do nome, no topo dos PDFs. Ausente, fica só o nome.
-
-    Opcional de propósito: a logo é da marca de quem hospeda, não do código, e
-    um default apontando para um arquivo que o repositório não tem faria todo
-    relatório nascer com um aviso no log. Caminho relativo é resolvido a partir
-    do diretório de trabalho do processo — `assets/logo.png` funciona tanto no
-    `make api` quanto no container, que roda em `/app`.
-    """
+    """Logo ao lado do nome nos PDFs. Caminho relativo ao diretório do processo."""
 
     # --- HTTP ------------------------------------------------------------
     allowed_hosts: CsvList = ["*"]
@@ -103,11 +91,7 @@ class Settings(BaseSettings):
     @field_validator("report_logo_path", mode="before")
     @classmethod
     def _blank_path_is_no_logo(cls, value: object) -> object:
-        """`REPORT_LOGO_PATH=` no `.env` é ausência, não o caminho vazio.
-
-        Sem isto a variável declarada e não preenchida viraria `Path(".")` — um
-        diretório, que o leitor de imagem recusaria a cada relatório gerado.
-        """
+        """`REPORT_LOGO_PATH=` vazio é ausência, não `Path(".")`."""
         if isinstance(value, str) and not value.strip():
             return None
         return value

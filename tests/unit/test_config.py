@@ -67,11 +67,6 @@ def test_the_report_logo_is_optional() -> None:
 
 
 def test_a_blank_report_logo_is_the_same_as_none() -> None:
-    """`REPORT_LOGO_PATH=` no `.env` é variável declarada e não preenchida.
-
-    Sem o validador, viraria `Path(".")` — um diretório —, e todo relatório
-    gerado tentaria lê-lo como imagem antes de cair no nome em texto.
-    """
     assert _settings(report_logo_path="   ").report_logo_path is None
 
 

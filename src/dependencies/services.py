@@ -103,16 +103,7 @@ def get_report_service(
     clock: Clock = Depends(get_clock),
     settings: Settings = Depends(get_app_settings),
 ) -> ReportService:
-    """Relatório depende dos **serviços**, não dos repositórios.
-
-    É a fiação que garante a decisão do `report_service`: o PDF nasce da mesma
-    resposta que a tela recebe, e não de uma segunda consulta que poderia
-    discordar dela. O repositório de categorias entra só para escrever o nome da
-    categoria filtrada no cabeçalho.
-
-    A marca sai da configuração: `REPORT_BRAND_NAME` no topo da folha, com a
-    imagem de `REPORT_LOGO_PATH` ao lado quando houver uma.
-    """
+    """Depende dos serviços, não dos repositórios: o PDF sai da mesma resposta que a tela."""
     return ReportService(
         transactions=transactions,
         balances=balances,

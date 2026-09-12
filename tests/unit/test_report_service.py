@@ -1,16 +1,4 @@
-"""Regra de relatórios — sem banco, sem HTTP e sem gerar um PDF sequer.
-
-O serviço devolve um `Report` (nome do arquivo + `Document`), e é por isso que
-o que a folha **diz** se verifica aqui, em estruturas: as linhas da tabela, os
-totais em destaque, os filtros impressos no cabeçalho e o nome com que o arquivo
-chega na pasta de downloads. Que esse documento vire um PDF legível é assunto de
-`test_pdf.py`; que ele chegue ao navegador com os cabeçalhos certos é de
-`tests/api/test_reports.py`.
-
-As dependências são `Protocol` — os serviços de lançamentos e de saldos — e aqui
-entram dubles. Que a consulta filtre por dono e some certo é assunto de quem faz
-SQL, e está em `tests/integration/`.
-"""
+"""Regra de relatórios contra dubles dos Protocols: o documento, sem gerar PDF."""
 
 from __future__ import annotations
 
@@ -43,8 +31,7 @@ from services.transaction_service import TransactionPage
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 
 MEIO_DE_SETEMBRO = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
-VIRADA_DO_MES = datetime(2026, 9, 1, 2, 0, tzinfo=UTC)
-"""1º de setembro às 2h em UTC — ainda 31 de agosto, às 23h, em São Paulo."""
+VIRADA_DO_MES = datetime(2026, 9, 1, 2, 0, tzinfo=UTC)  # ainda 31/08 às 23h em São Paulo
 
 SALARIO = "Salário"
 MERCADO = "Mercado"
@@ -89,11 +76,7 @@ def make_transaction(
 
 
 class FakeTransactionLister:
-    """Implementa `TransactionLister`, guardando o recorte que recebeu.
-
-    `total` é separado de `items` de propósito: é assim que o teto de linhas se
-    exercita sem construir dois mil objetos só para provocar a recusa.
-    """
+    """`total` separado de `items` para provocar o teto sem criar dois mil objetos."""
 
     def __init__(self, items: Sequence[Transaction] = (), *, total: int | None = None) -> None:
         self.items = list(items)
@@ -108,8 +91,6 @@ class FakeTransactionLister:
 
 
 class FakeBalanceReader:
-    """Implementa `BalanceReader` a partir de totais declarados por mês."""
-
     def __init__(self, by_month: dict[str, Totals] | None = None) -> None:
         self.by_month = {
             month_range(int(key[:4]), int(key[5:])): value
@@ -144,8 +125,6 @@ class FakeBalanceReader:
 
 
 class FakeCategoryLookup:
-    """Implementa `CategoryLookup`. Categoria de outra pessoa some, como no repositório."""
-
     def __init__(self, *categories: Category) -> None:
         self.by_id = {category.id: category for category in categories}
 
@@ -235,7 +214,6 @@ async def test_the_extract_has_one_row_per_transaction(
 
 
 async def test_income_and_expense_go_to_their_own_columns(user: User, mercado: Category) -> None:
-    """Colunas separadas é o que permite somar com o dedo na folha impressa."""
     lister = FakeTransactionLister([make_transaction("40.00", mercado)])
     service = build_service(transactions=lister)
 
@@ -251,7 +229,6 @@ async def test_income_and_expense_go_to_their_own_columns(user: User, mercado: C
 async def test_the_totals_are_the_sum_of_the_printed_rows(
     user: User, salario: Category, mercado: Category
 ) -> None:
-    """Nenhuma consulta à parte para o resumo: ele soma exatamente o que está na folha."""
     lister = FakeTransactionLister(
         [
             make_transaction("5000.00", salario),
@@ -272,7 +249,6 @@ async def test_the_totals_are_the_sum_of_the_printed_rows(
 
 
 async def test_a_negative_balance_is_marked_as_such(user: User, mercado: Category) -> None:
-    """O tom vem de quem calculou: o renderizador não olha o sinal do texto."""
     lister = FakeTransactionLister([make_transaction("40.00", mercado)])
     service = build_service(transactions=lister)
 
@@ -308,7 +284,6 @@ async def test_a_transaction_without_description_gets_a_placeholder(
 
 
 async def test_a_recorte_past_the_ceiling_is_refused(user: User) -> None:
-    """Sem teto, "exportar tudo" viraria centenas de páginas e um pico de memória."""
     service = build_service(transactions=FakeTransactionLister(total=MAX_ROWS + 1))
 
     with pytest.raises(ReportTooLargeError) as raised:
@@ -327,7 +302,6 @@ async def test_the_ceiling_itself_is_accepted(user: User) -> None:
 
 
 async def test_the_whole_recorte_is_asked_for_at_once(user: User) -> None:
-    """Relatório não pagina: pede o teto de uma vez, da primeira linha."""
     lister = FakeTransactionLister()
     service = build_service(transactions=lister)
 
@@ -352,7 +326,6 @@ async def test_the_whole_recorte_is_asked_for_at_once(user: User) -> None:
 async def test_the_kind_filter_names_the_report(
     user: User, kind: CategoryKind | None, title: str, prefix: str
 ) -> None:
-    """É o que faz o botão "exportar despesas" entregar um `despesas-....pdf`."""
     service = build_service()
 
     report = await service.transactions(user, filters=TransactionFilters(kind=kind))
@@ -377,7 +350,6 @@ async def test_the_period_shows_up_in_the_sheet_and_in_the_filename(
     subtitle: str,
     span: str,
 ) -> None:
-    """Sem nenhuma ponta, quem nomeia o arquivo é a data de geração — ver `_period_slug`."""
     service = build_service()
 
     report = await service.transactions(
@@ -389,7 +361,6 @@ async def test_the_period_shows_up_in_the_sheet_and_in_the_filename(
 
 
 async def test_the_header_states_the_filters(user: User, mercado: Category) -> None:
-    """Folha sem os filtros que a geraram é um monte de número que não se reconfere."""
     service = build_service(categories=FakeCategoryLookup(mercado))
 
     report = await service.transactions(
@@ -409,10 +380,6 @@ async def test_without_filters_the_header_says_so(user: User) -> None:
 
 
 async def test_a_category_the_user_cannot_see_is_still_declared(user: User) -> None:
-    """A listagem responde vazio para categoria de terceiro, e o relatório a acompanha.
-
-    O cabeçalho não pode calar o filtro: a folha sairia vazia sem dizer por quê.
-    """
     stranger = uuid4()
     service = build_service()
 
@@ -425,7 +392,6 @@ async def test_a_category_the_user_cannot_see_is_still_declared(user: User) -> N
 
 
 async def test_the_monthly_report_has_one_row_per_month(user: User) -> None:
-    """Inclusive os vazios: a série vem sem buraco do serviço de saldos."""
     balances = FakeBalanceReader(
         {
             "2026-07": Totals(income=Decimal("100.00"), expense=Decimal("30.00")),
@@ -469,7 +435,6 @@ async def test_the_monthly_total_is_the_one_the_balance_service_computed(user: U
 
 
 async def test_the_monthly_window_is_passed_through_untouched(user: User) -> None:
-    """Quem resolve janela ausente é o serviço de saldos, e não este."""
     balances = FakeBalanceReader()
     service = build_service(balances=balances)
 
@@ -509,11 +474,7 @@ async def test_the_range_header_says_the_ends_are_included(user: User) -> None:
 
 
 async def test_the_generation_date_comes_from_the_clock(user: User) -> None:
-    """Às 23h de 31 de agosto em São Paulo, o relatório é de 31 de agosto.
-
-    O mesmo instante em UTC já é 1º de setembro, e `date.today()` no servidor
-    carimbaria a folha com o dia seguinte.
-    """
+    """Em UTC já é 1º de setembro; `date.today()` carimbaria o dia seguinte."""
     service = build_service(clock=Clock(tz=SAO_PAULO, instant=lambda: VIRADA_DO_MES))
 
     report = await service.transactions(user, filters=TransactionFilters())

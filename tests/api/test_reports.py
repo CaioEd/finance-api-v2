@@ -1,20 +1,4 @@
-"""As três rotas de relatório, da requisição ao arquivo.
-
-O que só aqui se verifica é a **travessia inteira**: a query string vira recorte,
-o recorte vira consulta, a consulta vira folha, e a folha chega ao navegador com
-os cabeçalhos que fazem o download acontecer. As duas matrizes já garantem que a
-rota exige token; o que a regra escreve na folha está em
-`tests/unit/test_report_service.py`, e o desenho dela em `tests/unit/test_pdf.py`.
-
-Duas afirmações que justificam esta suíte existir para os relatórios:
-
-- o PDF traz **os lançamentos de quem pediu**, e nenhum de outra pessoa — num
-  arquivo binário o escopo esquecido não vaza uma linha que alguém veja numa
-  resposta JSON; vaza dentro de um anexo que ninguém abre no teste;
-- o erro continua saindo no envelope de sempre. A rota devolve `application/pdf`
-  no caminho feliz, e é fácil uma recusa virar um PDF vazio de 200 — que o front
-  baixaria como se fosse o relatório.
-"""
+"""Relatórios de ponta a ponta: query string, consulta, folha e cabeçalhos de download."""
 
 from __future__ import annotations
 
@@ -62,7 +46,6 @@ def a_transaction(
 
 
 def ana_with_a_september(client: ApiClient) -> RegisteredUser:
-    """Uma conta com um mês de movimento: uma receita e uma despesa."""
     ana = register_user(client)
     salario = a_category(client, ana, SALARIO)
     mercado = a_category(client, ana, MERCADO)
@@ -82,7 +65,6 @@ def assert_is_a_pdf(response: Response, filename: str) -> None:
 
 
 def test_the_extract_comes_as_a_pdf_attachment(client: ApiClient) -> None:
-    """`attachment` é o que faz o navegador baixar em vez de abrir na aba."""
     ana = ana_with_a_september(client)
 
     response = client.get(
@@ -96,7 +78,6 @@ def test_the_extract_comes_as_a_pdf_attachment(client: ApiClient) -> None:
 
 
 def test_the_extract_is_not_stored_by_the_browser(client: ApiClient) -> None:
-    """Extrato tem saldo e descrição de gasto: fora do cache de disco, mesmo após o logout."""
     ana = ana_with_a_september(client)
 
     response = client.get(EXTRACT, headers=ana.auth)
@@ -105,7 +86,6 @@ def test_the_extract_is_not_stored_by_the_browser(client: ApiClient) -> None:
 
 
 def test_the_declared_length_matches_the_file(client: ApiClient) -> None:
-    """É o `Content-Length` que dá barra de progresso em vez de download sem tamanho."""
     ana = ana_with_a_september(client)
 
     response = client.get(EXTRACT, headers=ana.auth)
@@ -134,11 +114,7 @@ def test_the_extract_carries_the_transactions_of_the_period(client: ApiClient) -
 
 
 def test_one_users_launches_never_reach_another_sheet(client: ApiClient) -> None:
-    """O escopo por dono atravessa até dentro do anexo.
-
-    Num PDF o vazamento não aparece na resposta que alguém lê no navegador — vai
-    dentro do arquivo, que é exatamente onde ninguém olha.
-    """
+    """Num PDF o vazamento vai dentro do anexo, onde ninguém olha."""
     ana = ana_with_a_september(client)
     bruno = register_user(client, email="bruno@exemplo.com", username="bruno")
     a_transaction(
@@ -152,7 +128,6 @@ def test_one_users_launches_never_reach_another_sheet(client: ApiClient) -> None
 
 
 def test_the_kind_filter_names_the_file_and_narrows_the_sheet(client: ApiClient) -> None:
-    """Exportar despesas é o extrato com `kind` — a mesma query string da listagem."""
     ana = ana_with_a_september(client)
 
     response = client.get(
@@ -168,11 +143,6 @@ def test_the_kind_filter_names_the_file_and_narrows_the_sheet(client: ApiClient)
 
 
 def test_the_category_filter_narrows_the_sheet_and_is_declared_in_it(client: ApiClient) -> None:
-    """O filtro por categoria vai para a consulta **e** para o cabeçalho da folha.
-
-    Impresso, o relatório perde a query string que o gerou: sem o nome da
-    categoria no alto, sobra uma lista curta sem explicação para quem a receber.
-    """
     ana = register_user(client)
     mercado = a_category(client, ana, MERCADO)
     farmacia = a_category(client, ana, ("Farmácia", "expense"))
@@ -189,7 +159,6 @@ def test_the_category_filter_narrows_the_sheet_and_is_declared_in_it(client: Api
 
 
 def test_an_empty_recorte_still_produces_a_sheet(client: ApiClient) -> None:
-    """Nada a listar é um PDF dizendo isso, não um erro nem um arquivo vazio."""
     ana = register_user(client)
 
     response = client.get(
@@ -206,7 +175,6 @@ def test_an_empty_recorte_still_produces_a_sheet(client: ApiClient) -> None:
 
 
 def test_the_monthly_report_has_the_months_of_the_window(client: ApiClient) -> None:
-    """O agrupamento por mês passa pelo `date_trunc` traduzido — ver `sqlite_backend`."""
     ana = ana_with_a_september(client)
 
     response = client.get(
@@ -237,7 +205,7 @@ def test_the_range_report_totals_the_period(client: ApiClient) -> None:
 
 
 def test_an_inverted_period_answers_json_in_the_envelope(client: ApiClient) -> None:
-    """A recusa não pode sair como um PDF de 200 que o front baixaria como relatório."""
+    """A recusa não pode virar um PDF de 200 que o front baixaria como relatório."""
     ana = register_user(client)
 
     response = client.get(

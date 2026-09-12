@@ -205,7 +205,6 @@ def a_date_range(_client: ApiClient, _user: RegisteredUser) -> str:
 
 
 def a_report_date_range(_client: ApiClient, _user: RegisteredUser) -> str:
-    """O mesmo de `a_date_range`, na rota que exporta aquele saldo em PDF."""
     return f"/api/v1/reports/balance/range?{DATE_RANGE_QUERY}"
 
 
@@ -246,9 +245,7 @@ PROTECTED_ROUTES = [
     ProtectedRoute("GET", "/api/v1/balance/current"),
     ProtectedRoute("GET", "/api/v1/balance/monthly"),
     ProtectedRoute("GET", "/api/v1/balance/range", setup=a_date_range),
-    # Relatórios: leem o mesmo recorte das rotas acima e devolvem PDF. Autenticar
-    # basta — não há relatório de dado de terceiro, porque o escopo por dono
-    # continua vindo do repositório por trás dos mesmos serviços.
+    # Relatórios: basta autenticar; o escopo por dono vem dos mesmos repositórios.
     ProtectedRoute("GET", "/api/v1/reports/transactions"),
     ProtectedRoute("GET", "/api/v1/reports/balance/monthly"),
     ProtectedRoute("GET", "/api/v1/reports/balance/range", setup=a_report_date_range),

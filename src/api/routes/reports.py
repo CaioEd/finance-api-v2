@@ -1,31 +1,6 @@
-"""Rotas de relatório: os mesmos recortes da API, em PDF.
+"""Os recortes de `/transactions` e `/balance` em PDF, com os mesmos filtros.
 
-Cada rota daqui é o par de uma rota de leitura que já existe, e aceita
-**exatamente** os mesmos filtros:
-
-- `GET /reports/transactions` espelha `GET /transactions` — `kind`,
-  `category_id`, `occurred_from`, `occurred_to`;
-- `GET /reports/balance/monthly` espelha `GET /balance/monthly` — `from_month`,
-  `to_month`;
-- `GET /reports/balance/range` espelha `GET /balance/range` — `occurred_from`,
-  `occurred_to`.
-
-Assim a tela não aprende um segundo vocabulário para exportar: o botão de baixar
-manda para cá a mesma query string que ela já usou para montar a lista, e o PDF
-sai do mesmo recorte. Receitas e despesas não têm rota própria — são o `kind` do
-extrato, como em `GET /transactions`, e o filtro vira o título e o nome do
-arquivo (`receitas-2026-01-01_2026-09-12.pdf`).
-
-Não há `/reports/balance/current`: o mês corrente é o intervalo entre as duas
-pontas que `GET /balance/current` devolve, e `/reports/balance/range` já as
-aceita. Uma rota a mais para três números seria uma quarta forma de perguntar a
-mesma coisa.
-
-**A renderização sai do event loop.** Montar PDF é trabalho de CPU e o servidor
-tem um loop só: uma tabela de mil linhas renderizada no loop atrasaria toda
-requisição em voo. `run_in_threadpool` é a fronteira certa para isso, e é
-justamente por isso que quem monta o documento (`ReportService`) devolve dados,
-não bytes — serviço não conhece FastAPI.
+A renderização roda em `run_in_threadpool`: montar PDF é CPU, e o event loop é um só.
 """
 
 from __future__ import annotations
@@ -59,17 +34,13 @@ Responses = dict[int | str, dict[str, Any]]
 
 PDF_MEDIA_TYPE = "application/pdf"
 
+# Declarado à mão: sem isto o OpenAPI anunciaria JSON.
 PDF_DOWNLOAD: Responses = {
     200: {
         "description": "O relatório em PDF, como anexo para download",
         "content": {PDF_MEDIA_TYPE: {"schema": {"type": "string", "format": "binary"}}},
     }
 }
-"""Declarado à mão porque a resposta não é JSON.
-
-Sem isto o OpenAPI anunciaria `application/json` e todo cliente gerado a partir
-dele tentaria desserializar o PDF.
-"""
 
 TOO_MANY_ROWS: Responses = {
     422: {"description": f"O recorte tem mais de {MAX_ROWS} lançamentos, ou o período é inválido"}
@@ -86,22 +57,7 @@ MONTH_QUERY = (
 
 
 async def _download(report: Report) -> Response:
-    """O PDF pronto para o navegador salvar.
-
-    Três cabeçalhos, e os três importam:
-
-    - `Content-Disposition: attachment` é o que faz o navegador **baixar** em vez
-      de abrir o arquivo dentro da aba, e é onde vai o nome do arquivo;
-    - `Cache-Control: no-store` mantém o extrato fora do cache do disco — ele
-      tem saldo e descrição de gasto, e o navegador guardaria isso mesmo depois
-      do logout;
-    - o `Content-Length`, que o próprio `Response` calcula do corpo, é o que dá
-      barra de progresso em vez de um download de tamanho desconhecido.
-
-    Para o front ler o nome do arquivo quando a API está noutra origem, o
-    `Content-Disposition` precisa estar em `expose_headers` do CORS — ver
-    `main.create_app`.
-    """
+    """Anexo para download, fora do cache do navegador."""
     content = await run_in_threadpool(render_pdf, report.document)
     return Response(
         content=content,
@@ -127,12 +83,7 @@ async def export_transactions(
     occurred_from: date | None = Query(None, description="Competência a partir de (inclusive)"),
     occurred_to: date | None = Query(None, description="Competência até (inclusive)"),
 ) -> Response:
-    """Os mesmos filtros de `GET /transactions`, sem `limit` nem `offset`.
-
-    Paginar um relatório não faria sentido: o arquivo é baixado inteiro, de uma
-    vez. O que existe no lugar é um teto — recorte com mais de `MAX_ROWS`
-    lançamentos é recusado com 422, dizendo quantos são.
-    """
+    """Os filtros de `GET /transactions`, sem paginação: acima de `MAX_ROWS`, 422."""
     report = await service.transactions(
         user,
         filters=TransactionFilters(
@@ -157,7 +108,6 @@ async def export_monthly_balance(
     from_month: str | None = Query(None, pattern=MONTH_KEY_PATTERN, description=MONTH_QUERY),
     to_month: str | None = Query(None, pattern=MONTH_KEY_PATTERN, description=MONTH_QUERY),
 ) -> Response:
-    """A tradução de `YYYY-MM` para intervalo acontece aqui, como em `/balance/monthly`."""
     report = await service.monthly_balance(
         user,
         first=parse_month(from_month) if from_month else None,
@@ -178,6 +128,5 @@ async def export_range_balance(
     occurred_from: date = Query(description="Competência a partir de (inclusive)"),
     occurred_to: date = Query(description="Competência até (inclusive)"),
 ) -> Response:
-    """As duas pontas são obrigatórias, como em `GET /balance/range`."""
     report = await service.range_balance(user, first_day=occurred_from, last_day=occurred_to)
     return await _download(report)

@@ -26,13 +26,7 @@ from models import user as _user_model  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    # `disable_existing_loggers=False`, ao contrário do default do template do
-    # Alembic: com o default, configurar o log daqui **desliga** todo logger já
-    # criado no processo — os da aplicação inclusive. Rodando a migration pela
-    # linha de comando isso não aparece, porque é outro processo; rodando-a
-    # dentro de um processo que também é a aplicação (a suíte de integração faz
-    # isso), a aplicação emudece do ponto desta linha em diante, e o próximo
-    # `logger.warning` some sem deixar rastro.
+    # O default desliga os loggers já criados no processo, inclusive os da aplicação.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Quem chama o Alembic pela linha de comando não passa URL, e ela vem das

@@ -1,40 +1,8 @@
-"""Geração de PDF: o desenho, e só ele.
+"""Geração de PDF: único módulo que importa reportlab.
 
-Este é o **único** módulo do projeto que importa `reportlab`. O que entra aqui é
-um `Document` — dataclasses de texto já formatado — e o que sai são bytes;
-nenhum tipo de domínio atravessa a fronteira nas duas direções. É o que mantém
-a decisão de biblioteca reversível: trocar o reportlab é reescrever este
-arquivo, não caçar `canvas.drawString` espalhado pelos serviços.
-
-A divisão de trabalho com `services/report_service.py` é essa mesma linha:
-
-- **aqui** mora *como* a folha se parece — margens, fonte, faixa do cabeçalho,
-  zebra da tabela, paginação, onde a logo é desenhada;
-- **lá** mora *o que* a folha diz — título em português, quais colunas, como o
-  dinheiro e a data são escritos, quais linhas entram.
-
-Por isso `Document` não tem `Decimal`, nem `date`, nem `User`: recebe strings
-prontas. Formatar dinheiro é decisão de apresentação do domínio (e o projeto
-nem guarda moeda — ver `models.transaction`), e um renderizador que soubesse
-formatar `Decimal` teria de saber também em que idioma.
-
-Três escolhas que valem registro:
-
-1. **`platypus`, não `canvas` cru.** A tabela de lançamentos pode passar de
-   trinta páginas, e quebrar tabela à mão é reimplementar paginação. O cabeçalho
-   da tabela se repete a cada página (`repeatRows=1`), e a faixa com a logo e a
-   data é desenhada no canvas por página (`onPage`), que é o que faz toda folha
-   solta continuar identificável.
-2. **Duas passadas de renderização**, para o rodapé poder dizer "Página 2 de 7".
-   O total só é conhecido depois de montar o documento, e o caminho usual —
-   subclasse de `canvas.Canvas` que guarda as páginas — é impossível sob
-   `mypy --strict`: o reportlab não publica tipos, a base viria como `Any` e
-   `disallow_subclassing_any` reprova. A segunda passada custa CPU e nada mais:
-   o rodapé é pintado no canvas, então mudar de "Página 2" para "Página 2 de 7"
-   não mexe na paginação.
-3. **Fontes embutidas do PDF** (Helvetica), sem arquivo de fonte no repositório.
-   Acento português cabe no WinAnsi que elas usam; incorporar uma fonte custaria
-   um binário versionado e alguns megabytes por relatório.
+Recebe um `Document` de texto já formatado e devolve bytes. Renderiza duas vezes para o rodapé
+saber o total de páginas: a subclasse de `Canvas` que evitaria isso esbarra no
+`disallow_subclassing_any` do mypy, porque o reportlab não publica tipos.
 """
 
 from __future__ import annotations
@@ -61,20 +29,12 @@ logger = logging.getLogger(__name__)
 
 
 class Align(StrEnum):
-    """Alinhamento de uma coluna. Os valores são os que o reportlab entende."""
-
     LEFT = "LEFT"
     RIGHT = "RIGHT"
 
 
 class Tone(StrEnum):
-    """Peso semântico de um número em destaque.
-
-    Existe para que o saldo negativo saia vermelho sem que este módulo precise
-    olhar o sinal: quem sabe se o número é bom ou ruim é quem o calculou. Um
-    renderizador que decidisse pela aparência do texto acertaria em `-10,00` e
-    erraria em "10,00 a menos".
-    """
+    """Cor de um número em destaque. Quem decide é quem calculou, não o renderizador."""
 
     NEUTRAL = "neutral"
     POSITIVE = "positive"
@@ -83,27 +43,14 @@ class Tone(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Column:
-    """Uma coluna de tabela.
-
-    `ratio` é proporção, não medida: a largura útil da folha muda com a margem,
-    e coluna em pontos fixos estoura ou sobra quando ela muda.
-    """
-
     header: str
     ratio: float = 1.0
     align: Align = Align.LEFT
     wrap: bool = False
-    """Texto que pode passar da largura da célula (descrição, nome comprido).
-
-    Quebra em várias linhas em vez de vazar por cima da coluna vizinha. Só as
-    colunas de texto pagam o custo: número nenhum se beneficia de quebrar.
-    """
 
 
 @dataclass(frozen=True, slots=True)
 class TableBlock:
-    """Uma tabela. As linhas vêm formatadas, na ordem em que devem sair."""
-
     columns: Sequence[Column]
     rows: Sequence[Sequence[str]]
 
@@ -117,19 +64,11 @@ class SummaryItem:
 
 @dataclass(frozen=True, slots=True)
 class SummaryBlock:
-    """Os números do recorte, em destaque no alto da folha.
-
-    Fica antes da tabela de propósito: quem imprime um relatório de finanças
-    quer o total primeiro, e a lista como prova dele.
-    """
-
     items: Sequence[SummaryItem]
 
 
 @dataclass(frozen=True, slots=True)
 class NoteBlock:
-    """Uma linha de texto corrido — o "nada a listar", um aviso de recorte."""
-
     text: str
 
 
@@ -138,14 +77,7 @@ type Block = TableBlock | SummaryBlock | NoteBlock
 
 @dataclass(frozen=True, slots=True)
 class Brand:
-    """A identidade que aparece no topo de toda folha.
-
-    `logo_path` é opcional e o caminho vem da configuração
-    (`REPORT_LOGO_PATH`): imagem ausente, ilegível ou num formato que o
-    reportlab não leia cai no nome em texto, e o relatório sai igual. Um
-    relatório que falhasse por causa da logo trocaria um problema de aparência
-    por um de indisponibilidade.
-    """
+    """Marca do topo da folha. Logo ausente ou ilegível deixa só o nome."""
 
     name: str
     logo_path: Path | None = None
@@ -153,26 +85,12 @@ class Brand:
 
 @dataclass(frozen=True, slots=True)
 class Document:
-    """Tudo que uma folha precisa, já em texto.
-
-    `generated_at` e `footer` chegam prontos porque a fonte deles é o domínio:
-    a data vem do `Clock`, no fuso da aplicação (nunca de `date.today()`), e o
-    rodapé identifica de quem é o extrato — folha impressa sem dono é folha que
-    ninguém sabe conferir.
-    """
-
     title: str
     subtitle: str
     generated_at: str
     footer: str
     brand: Brand
     filters: Sequence[tuple[str, str]] = ()
-    """O recorte que produziu estes números, rótulo e valor.
-
-    Vai impresso: um PDF sem os filtros que o geraram é um monte de números que
-    não se pode reconferir depois.
-    """
-
     blocks: Sequence[Block] = field(default=())
 
 
@@ -181,22 +99,14 @@ class Document:
 PAGE_SIZE = A4
 
 SIDE_MARGIN = 18 * mm
-TOP_MARGIN = 32 * mm
-"""Alto o bastante para a faixa do cabeçalho, que é pintada fora do frame."""
-
+TOP_MARGIN = 32 * mm  # inclui a faixa do cabeçalho, pintada fora do frame
 BOTTOM_MARGIN = 18 * mm
 
 LOGO_HEIGHT = 12 * mm
 LOGO_MAX_WIDTH = 55 * mm
 BRAND_SIZE = 13
 BRAND_GAP = 8
-CAP_RATIO = 0.72
-"""Altura de caixa alta da Helvetica, em fração do corpo.
-
-Serve para centrar o nome pela altura das letras que se veem, e não pela caixa
-da fonte — que inclui descida que "FinanceHub" nem usa.
-"""
-
+CAP_RATIO = 0.72  # altura de caixa alta da Helvetica, para centrar o nome na logo
 
 SANS = "Helvetica"
 SANS_BOLD = "Helvetica-Bold"
@@ -224,16 +134,11 @@ FILTER_STYLE = ParagraphStyle("filtro", fontName=SANS, fontSize=8.5, leading=12,
 NOTE_STYLE = ParagraphStyle("nota", fontName=SANS, fontSize=9.5, leading=14, textColor=MUTED)
 CELL_STYLE = ParagraphStyle("celula", fontName=SANS, fontSize=8.5, leading=11, textColor=INK)
 
+# Célula com `wrap` vira Paragraph, e aí quem alinha é o estilo dela, não o ALIGN da tabela.
 CELL_STYLES = {
     Align.LEFT: CELL_STYLE,
     Align.RIGHT: ParagraphStyle("celula-direita", parent=CELL_STYLE, alignment=2),
 }
-"""Um estilo por alinhamento, porque o do parágrafo é que vale.
-
-A célula que quebra linha vira `Paragraph`, e aí o `ALIGN` da tabela não a
-alcança mais: quem alinha o texto é o estilo dele. Sem este par, uma coluna
-declarada à direita passaria a sair à esquerda no dia em que ganhasse `wrap`.
-"""
 
 BLOCK_GAP = 6 * mm
 
@@ -242,15 +147,7 @@ BLOCK_GAP = 6 * mm
 
 
 def render_pdf(document: Document) -> bytes:
-    """O documento como um arquivo PDF.
-
-    Chamada **fora do event loop** (`run_in_threadpool`, em `api/routes`):
-    montar PDF é CPU, e segurar o loop numa tabela de mil linhas atrasaria toda
-    requisição em voo — o servidor é um só.
-
-    São duas passadas: a primeira só para contar as páginas, a segunda para
-    escrever "de N" no rodapé. Ver o topo do módulo.
-    """
+    """A primeira passada só conta as páginas, para o rodapé da segunda dizer "de N"."""
     logo = _load_logo(document.brand)
     _, pages = _build(document, logo=logo, total_pages=None)
     content, _ = _build(document, logo=logo, total_pages=pages)
@@ -258,7 +155,6 @@ def render_pdf(document: Document) -> bytes:
 
 
 def _build(document: Document, *, logo: _Logo | None, total_pages: int | None) -> tuple[bytes, int]:
-    """Uma passada de renderização: os bytes e quantas páginas saíram."""
     buffer = BytesIO()
     template = SimpleDocTemplate(
         buffer,
@@ -267,8 +163,6 @@ def _build(document: Document, *, logo: _Logo | None, total_pages: int | None) -
         rightMargin=SIDE_MARGIN,
         topMargin=TOP_MARGIN,
         bottomMargin=BOTTOM_MARGIN,
-        # Metadados do arquivo: é o que o leitor de PDF mostra na aba e o que
-        # aparece em "propriedades" depois que o arquivo sai daqui.
         title=document.title,
         subject=document.subtitle,
         author=document.brand.name,
@@ -282,12 +176,7 @@ def _build(document: Document, *, logo: _Logo | None, total_pages: int | None) -
 
 
 def _story(document: Document, width: float) -> list[Any]:
-    """Os elementos que fluem pela folha, na ordem.
-
-    Título, recorte e filtros só existem na primeira página — repeti-los a cada
-    folha comeria o espaço da tabela. O que se repete é a faixa do cabeçalho,
-    que é pintada no canvas.
-    """
+    """Título e filtros só na primeira página; o que se repete é pintado no canvas."""
     story: list[Any] = [
         Paragraph(escape(document.title), TITLE_STYLE),
         Paragraph(escape(document.subtitle), SUBTITLE_STYLE),
@@ -314,11 +203,6 @@ def _render_block(block: Block, width: float) -> Any:
 
 
 def _table(block: TableBlock, width: float) -> Any:
-    """A tabela de dados: cabeçalho que se repete por página, zebra e alinhamento.
-
-    `LongTable` e não `Table`: o algoritmo de quebra dele é o que aguenta
-    centenas de linhas sem medir a tabela inteira de uma vez.
-    """
     widths = _column_widths(block.columns, width)
     data: list[list[Any]] = [[column.header for column in block.columns]]
     data.extend(
@@ -351,7 +235,6 @@ def _table(block: TableBlock, width: float) -> Any:
 
 
 def _summary(block: SummaryBlock, width: float) -> Any:
-    """Os totais como painéis lado a lado: rótulo pequeno em cima, número embaixo."""
     labels = [item.label for item in block.items]
     values = [item.value for item in block.items]
     columns = max(len(block.items), 1)
@@ -385,7 +268,6 @@ def _column_widths(columns: Sequence[Column], width: float) -> list[float]:
 
 
 def _cell(column: Column, value: str) -> Any:
-    """O conteúdo de uma célula: texto cru, ou um parágrafo quando pode quebrar."""
     if not column.wrap:
         return value
     return Paragraph(escape(value), CELL_STYLES[column.align])
@@ -396,19 +278,13 @@ def _cell(column: Column, value: str) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class _Logo:
-    """A imagem já lida e medida, para não reabrir o arquivo a cada página."""
-
     image: Any
     width: float
     height: float
 
 
 def _load_logo(brand: Brand) -> _Logo | None:
-    """Lê a logo uma vez por relatório, ou desiste dela em silêncio no log.
-
-    Qualquer falha — arquivo ausente, permissão, formato que o reportlab não
-    decodifica — vira aviso e cabeçalho em texto. Ver `Brand`.
-    """
+    """Qualquer falha ao ler a imagem vira aviso no log e faixa sem logo."""
     if brand.logo_path is None:
         return None
     try:
@@ -434,7 +310,6 @@ def _paint_frame(
     logo: _Logo | None,
     total_pages: int | None,
 ) -> None:
-    """Pinta o que se repete em toda folha: faixa com logo e data, e o rodapé."""
     canvas.saveState()
     page_width, page_height = frame.pagesize
     left = frame.leftMargin
@@ -447,8 +322,6 @@ def _paint_frame(
     canvas.setFillColor(MUTED)
     canvas.drawRightString(right, band_baseline + 4, document.generated_at)
     if canvas.getPageNumber() > 1:
-        # A partir da segunda folha o título volta pequeno no alto: a primeira
-        # página já o traz grande, e folha solta sem título não se identifica.
         canvas.drawRightString(right, band_baseline - 7, document.title)
 
     rule = page_height - TOP_MARGIN + 6 * mm
@@ -469,13 +342,7 @@ def _paint_frame(
 def _paint_brand(
     canvas: Any, *, logo: _Logo | None, brand: Brand, x: float, baseline: float
 ) -> None:
-    """A marca no alto da folha: o símbolo, quando há um, e o nome sempre.
-
-    O nome fica **ao lado** da imagem, não no lugar dela: a logo é um símbolo, e
-    símbolo sozinho não diz de quem é a folha para quem a recebe impressa. Sem
-    imagem, o lugar dela é uma barra de cor — o alto da folha não pode ficar
-    sendo uma linha de texto solta.
-    """
+    """Logo, ou uma barra de cor sem ela, com o nome sempre ao lado."""
     if logo is not None:
         bottom = baseline - logo.height + 9
         canvas.drawImage(
@@ -489,9 +356,6 @@ def _paint_brand(
             mask="auto",
         )
         mark_width = logo.width
-        # Centrado na altura do símbolo: alinhar o nome pela linha de base da
-        # faixa o deixaria boiando no alto de uma marca que é quase três vezes
-        # mais alta que ele.
         text_baseline = bottom + (logo.height - BRAND_SIZE * CAP_RATIO) / 2
     else:
         canvas.setFillColor(ACCENT)
@@ -505,7 +369,6 @@ def _paint_brand(
 
 
 def _page_label(page: int, total_pages: int | None) -> str:
-    """ "Página 2 de 7" — ou só "Página 2" na passada que ainda não sabe o total."""
     if total_pages is None:
         return f"Página {page}"
     return f"Página {page} de {total_pages}"

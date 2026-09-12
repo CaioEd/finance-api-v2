@@ -14,8 +14,7 @@ RUN pip install .
 
 COPY alembic.ini ./
 COPY alembic ./alembic
-# Logo dos relatórios (REPORT_LOGO_PATH=assets/logo.png). Vai para a imagem para
-# que o container também funcione sem o bind mount do compose.
+# Logo dos relatórios (REPORT_LOGO_PATH).
 COPY assets ./assets
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
