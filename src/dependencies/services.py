@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.clock import Clock
 from core.config import Settings
+from core.pdf import Brand
 from core.security import PasswordHasher, TokenCodec
 from dependencies.database import get_session
 from dependencies.repositories import (
@@ -35,6 +36,7 @@ from services.admin_user_service import AdminUserService
 from services.auth_service import AuthService
 from services.balance_service import BalanceService
 from services.category_service import CategoryService
+from services.report_service import ReportService
 from services.transaction_service import TransactionService
 from services.user_service import UserService
 
@@ -91,6 +93,23 @@ def get_transaction_service(
         transactions=transactions,
         categories=categories,
         clock=clock,
+    )
+
+
+def get_report_service(
+    transactions: TransactionService = Depends(get_transaction_service),
+    balances: BalanceService = Depends(get_balance_service),
+    categories: CategoryRepository = Depends(get_category_repository),
+    clock: Clock = Depends(get_clock),
+    settings: Settings = Depends(get_app_settings),
+) -> ReportService:
+    """Depende dos serviços, não dos repositórios: o PDF sai da mesma resposta que a tela."""
+    return ReportService(
+        transactions=transactions,
+        balances=balances,
+        categories=categories,
+        clock=clock,
+        brand=Brand(name=settings.report_brand_name, logo_path=settings.report_logo_path),
     )
 
 

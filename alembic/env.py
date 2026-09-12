@@ -26,7 +26,8 @@ from models import user as _user_model  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # O default desliga os loggers já criados no processo, inclusive os da aplicação.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Quem chama o Alembic pela linha de comando não passa URL, e ela vem das
 # Settings. Quem chama programaticamente (a suíte de testes) já a definiu — e

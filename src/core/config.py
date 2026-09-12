@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -51,6 +52,13 @@ class Settings(BaseSettings):
     debug: bool = False
     docs_enabled: bool = True
 
+    # --- Relatórios --------------------------------------------------------
+    report_brand_name: str = "FinanceHub"
+    """Nome no topo dos PDFs: a marca do produto. `app_name` é o do serviço."""
+
+    report_logo_path: Path | None = None
+    """Logo ao lado do nome nos PDFs. Caminho relativo ao diretório do processo."""
+
     # --- HTTP ------------------------------------------------------------
     allowed_hosts: CsvList = ["*"]
     cors_origins: CsvList = []
@@ -78,6 +86,14 @@ class Settings(BaseSettings):
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("report_logo_path", mode="before")
+    @classmethod
+    def _blank_path_is_no_logo(cls, value: object) -> object:
+        """`REPORT_LOGO_PATH=` vazio é ausência, não `Path(".")`."""
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @field_validator("app_timezone")

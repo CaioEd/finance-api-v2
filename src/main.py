@@ -79,6 +79,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            # Sem isto o front noutra origem não lê o nome do arquivo dos relatórios.
+            expose_headers=["Content-Disposition"],
         )
 
     app.include_router(health_router)

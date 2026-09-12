@@ -165,6 +165,12 @@ class PeriodTooLongError(UnprocessableError):
     # de zero — resposta cara de montar e inútil de ler.
 
 
+class ReportTooLargeError(UnprocessableError):
+    code = "report_too_large"
+    message = "O recorte pedido tem lançamentos demais para um relatório."
+    # 422 como PeriodTooLongError: o pedido é válido, a resposta é que não cabe.
+
+
 class ServiceUnavailableError(DomainError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "service_unavailable"

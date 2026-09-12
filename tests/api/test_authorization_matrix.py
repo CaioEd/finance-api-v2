@@ -191,6 +191,9 @@ def a_transaction_of(client: ApiClient, user: RegisteredUser) -> str:
     return f"/api/v1/transactions/{response.json()['id']}"
 
 
+DATE_RANGE_QUERY = "occurred_from=2026-01-01&occurred_to=2026-12-31"
+
+
 def a_date_range(_client: ApiClient, _user: RegisteredUser) -> str:
     """`/balance/range` exige as duas pontas, e o `setup` é o que as fornece.
 
@@ -198,7 +201,11 @@ def a_date_range(_client: ApiClient, _user: RegisteredUser) -> str:
     a validação do parâmetro em vez da autorização. Para o anônimo o caminho nu
     basta: a autenticação decide antes de o parâmetro ser lido.
     """
-    return "/api/v1/balance/range?occurred_from=2026-01-01&occurred_to=2026-12-31"
+    return f"/api/v1/balance/range?{DATE_RANGE_QUERY}"
+
+
+def a_report_date_range(_client: ApiClient, _user: RegisteredUser) -> str:
+    return f"/api/v1/reports/balance/range?{DATE_RANGE_QUERY}"
 
 
 PROTECTED_ROUTES = [
@@ -238,6 +245,10 @@ PROTECTED_ROUTES = [
     ProtectedRoute("GET", "/api/v1/balance/current"),
     ProtectedRoute("GET", "/api/v1/balance/monthly"),
     ProtectedRoute("GET", "/api/v1/balance/range", setup=a_date_range),
+    # Relatórios: basta autenticar; o escopo por dono vem dos mesmos repositórios.
+    ProtectedRoute("GET", "/api/v1/reports/transactions"),
+    ProtectedRoute("GET", "/api/v1/reports/balance/monthly"),
+    ProtectedRoute("GET", "/api/v1/reports/balance/range", setup=a_report_date_range),
 ]
 
 # Autenticar não basta: estas exigem o papel de administrador.

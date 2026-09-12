@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -58,3 +60,17 @@ def test_lists_are_read_as_csv_not_json(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_tzinfo_is_derived_from_app_timezone() -> None:
     assert str(_settings().tzinfo) == "America/Sao_Paulo"
+
+
+def test_the_report_logo_is_optional() -> None:
+    assert _settings().report_logo_path is None
+
+
+def test_a_blank_report_logo_is_the_same_as_none() -> None:
+    assert _settings(report_logo_path="   ").report_logo_path is None
+
+
+def test_a_report_logo_becomes_a_path() -> None:
+    assert _settings(report_logo_path="assets/logo.png") == _settings(
+        report_logo_path=Path("assets/logo.png")
+    )

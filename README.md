@@ -5,8 +5,8 @@ saldos agregados (mês corrente, mês a mês, intervalo de datas) e baixa um PDF
 período.
 
 Hoje funcionam identidade e sessão (registro, login, refresh rotativo, perfil próprio e o CRUD
-administrativo de usuários), as categorias, os lançamentos de receita e despesa e os saldos
-agregados. O relatório em PDF ainda não existe.
+administrativo de usuários), as categorias, os lançamentos de receita e despesa, os saldos
+agregados e a exportação em PDF de todos eles.
 
 | Fase | Escopo | Situação |
 |---|---|---|
@@ -15,7 +15,7 @@ agregados. O relatório em PDF ainda não existe.
 | 2 | Categorias (globais + custom por usuário) | concluída |
 | 3 | Transações (receitas e despesas numa entidade só) | concluída |
 | 4 | Saldos: mês corrente, mês a mês, intervalo | concluída |
-| 5 | Relatório em PDF | pendente |
+| 5 | Relatório em PDF | concluída |
 | 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários entregue |
 
 ## Tech stack e requisitos
@@ -27,6 +27,7 @@ agregados. O relatório em PDF ainda não existe.
 | Banco | PostgreSQL 17, SQLAlchemy 2.0 async + asyncpg |
 | Migrations | Alembic (modo async) |
 | Auth | JWT próprio (PyJWT) + senha em argon2id |
+| PDF | reportlab, confinado a `core/pdf.py` |
 | Testes | pytest + pytest-asyncio; TestClient (API, em SQLite) e httpx.AsyncClient (integração) |
 | Qualidade | ruff (lint + format), mypy `--strict` |
 | Execução | Docker Compose (api + db + db-test) |
@@ -146,6 +147,7 @@ src/
 │       ├── categories.py    categorias do sistema e do usuário
 │       ├── transactions.py  lançamentos de receita e despesa
 │       ├── balance.py       saldos agregados; só leitura, sem recurso guardado
+│       ├── reports.py      os mesmos recortes em PDF, como anexo para download
 │       ├── admin_users.py   CRUD de usuários, sob require_role(ADMIN)
 │       └── health.py
 │
@@ -159,6 +161,7 @@ src/
 │   ├── database.py          Base declarativa, TimestampMixin, engine, sessionmaker
 │   ├── security.py          argon2, JWT, tokens opacos
 │   ├── clock.py             fonte única de "agora"
+│   ├── pdf.py               desenho do PDF; único módulo que importa reportlab
 │   └── errors.py            catálogo de erros + handlers
 │
 └── dependencies/            toda a fiação de Depends, e só ela
@@ -194,6 +197,9 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | GET | `/balance/current` | Saldo do mês corrente, no fuso da aplicação | autenticado |
 | GET | `/balance/monthly` | Saldo mês a mês (`?from_month=&to_month=`, `YYYY-MM`) | autenticado |
 | GET | `/balance/range` | Saldo de um intervalo (`?occurred_from=&occurred_to=`) | autenticado |
+| GET | `/reports/transactions` | Extrato em PDF, com os filtros de `/transactions` | autenticado |
+| GET | `/reports/balance/monthly` | Saldo mês a mês em PDF | autenticado |
+| GET | `/reports/balance/range` | Saldo de um intervalo em PDF | autenticado |
 | GET | `/admin/users` | Lista usuários, com filtro e paginação | admin |
 | POST | `/admin/users` | Cria usuário, com papel e estado à escolha | admin |
 | PATCH | `/admin/users/{user_id}` | Atualiza usuário, inclusive papel e `is_active` | admin |
@@ -206,6 +212,35 @@ vive em `core/errors.py`:
 ```json
 { "error": { "code": "email_taken", "message": "Já existe uma conta com este e-mail.", "details": [] } }
 ```
+
+### Relatórios em PDF
+
+Cada rota de `/reports` é o par de uma rota de leitura que já existe e aceita **exatamente os mesmos
+filtros** — a tela manda para o relatório a mesma query string que usou para montar a lista, e o PDF
+sai do mesmo recorte. Receitas e despesas não têm rota própria: são o `kind` do extrato, e o filtro
+vira o título da folha e o nome do arquivo.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -OJ \
+  "localhost:8000/api/v1/reports/transactions?kind=expense&occurred_from=2026-01-01&occurred_to=2026-03-31"
+# despesas-2026-01-01_2026-03-31.pdf
+```
+
+A folha traz a logo e a data de geração no alto de **toda** página, o recorte que a produziu (período,
+tipo e categoria), os totais em destaque, a tabela, e no rodapé o dono do extrato com "Página X de N".
+
+**No front, o download não é um `<a href>`:** a rota exige `Authorization`, e link de navegador não
+manda cabeçalho. Baixa-se com `fetch` e um blob, lendo o nome do arquivo do `Content-Disposition` —
+que o navegador só entrega ao JavaScript porque a API o declara em `expose_headers` do CORS. O guia
+de consumo, com a função de download pronta, os filtros de cada rota e o que mostrar em cada erro,
+está em **[`docs/relatorios-pdf.md`](docs/relatorios-pdf.md)**.
+
+**A marca é sua.** O alto da folha é o símbolo de `REPORT_LOGO_PATH` (por padrão `assets/logo.png`)
+com `REPORT_BRAND_NAME` escrito ao lado — o nome do produto, não o `APP_NAME`, que identifica o
+serviço e não interessa a quem recebe o extrato. Troque a imagem em `assets/` para pôr a sua (ver
+`assets/README.md`); ela é o símbolo, não o letreiro, então logo com o nome desenhado sai repetida.
+Sem logo, ou com logo ilegível, a faixa sai só com o nome — e no segundo caso um aviso vai para o
+log. O relatório nunca cai por causa da marca.
 
 ### Decisões que quebram se você fizer diferente
 
@@ -249,6 +284,17 @@ vive em `core/errors.py`:
   monta um SQLite do `Base.metadata`, e é exatamente por isso que ela não substitui a de
   integração. Model novo precisa ser importado em `alembic/env.py`, senão o autogenerate não o
   enxerga.
+- **O relatório nasce das mesmas respostas que a tela**, e não de consultas próprias: o
+  `ReportService` depende dos serviços de lançamentos e de saldos, e os totais impressos são a soma
+  das linhas impressas. Um segundo caminho de consulta é como o PDF e a tela passam a discordar em
+  silêncio — o mesmo argumento que faz `net` ser derivado e não coluna.
+- **Relatório tem teto, não paginação.** O arquivo é montado inteiro na memória e baixado de uma
+  vez, então recorte com mais de 2000 lançamentos vira `422 report_too_large` dizendo quantos são —
+  em vez de duzentas páginas que ninguém lê e um pico de memória que todo mundo sente. A renderização
+  roda fora do event loop (`run_in_threadpool`): montar PDF é CPU, e o servidor tem um loop só.
+- **`reportlab` aparece em um arquivo só** (`core/pdf.py`), que recebe texto já formatado e devolve
+  bytes. O serviço monta o documento e não sabe gerar PDF; o renderizador desenha e não sabe o que é
+  um lançamento. Trocar de biblioteca é reescrever esse arquivo, não caçar `drawString` pelo domínio.
 - **Access token** é JWT de 15 min, não revogável. **Refresh token** é string opaca de 30 dias,
   guardada só como SHA-256 e invalidada a cada uso; reapresentar um já rotacionado derruba a
   linhagem inteira daquela sessão.
@@ -279,7 +325,7 @@ para que rota nova apareça como lacuna até ganhar teste:
 
 ```
 ------------------------ cobertura de endpoints da API -------------------------
-27 de 27 endpoints cobertos (100%)
+30 de 30 endpoints cobertos (100%)
 ```
 
 **Só um domínio.** O filtro `k` vai direto para o `-k` do pytest, que casa com o nome do arquivo e

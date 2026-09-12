@@ -69,6 +69,10 @@ NOT_CRUD: set[tuple[str, str]] = {
     ("GET", "/api/v1/balance/current"),
     ("GET", "/api/v1/balance/monthly"),
     ("GET", "/api/v1/balance/range"),
+    # Relatórios: exportação em PDF, não recurso — ver `test_reports.py`.
+    ("GET", "/api/v1/reports/transactions"),
+    ("GET", "/api/v1/reports/balance/monthly"),
+    ("GET", "/api/v1/reports/balance/range"),
 }
 
 

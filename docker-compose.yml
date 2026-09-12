@@ -54,6 +54,8 @@ services:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./src:/app/src:ro
+      # Trocar a logo dos relatórios não pede rebuild: basta o arquivo aqui.
+      - ./assets:/app/assets:ro
     command:
       - uvicorn
       - main:create_app
