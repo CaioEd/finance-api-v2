@@ -1,9 +1,9 @@
 # Cobertura de testes
 
 Medida em **2026-09-12** com `make coverage`, sobre o estado que este commit entrega — a fase 5
-(relatórios em PDF de lançamentos e de saldos) concluída sobre a fase 4, com os três módulos novos
-(`core/pdf.py`, `services/report_service.py`, `api/routes/reports.py`) e a leitura de volta do texto
-dos PDFs em `tests/pdf_text.py`. Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
+concluída, mais o encerramento de sessões: sair de todos os dispositivos (`POST /users/me/logout-all`),
+a desativação pelo admin revogando os refresh tokens, e `tests/api/test_sessions.py` fixando quanto
+dura cada token e o que encerra cada sessão. Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
 hash nesta linha ou é o do commit anterior ou não existe ainda. Para saber se envelheceu, compare a
 tabela de fases do `README.md` com a lista de módulos abaixo.
 
@@ -11,20 +11,20 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **96%** — 2003 linhas executáveis, 73 sem cobertura |
-| Suíte | 490 testes: 192 unitários, 177 de API, 121 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 92% — os 369 testes que rodam sem Docker |
+| **Cobertura total** | **96%** — 2018 linhas executáveis, 70 sem cobertura |
+| Suíte | 512 testes: 196 unitários, 195 de API, 121 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 93% — os 391 testes que rodam sem Docker |
 | Só os unitários | 55% — e está certo assim: unitário cobre regra, não fiação |
 
 Os 55% não são uma meta frustrada. Os testes unitários exercitam relógio, configuração,
 criptografia, a regra dos serviços e — desde a fase 5 — o desenho do PDF, que é código puro; rota,
 repositório e sessão precisam da aplicação de pé, e é a suíte de API que os alcança, daí o salto
-para 92% sem nenhum banco externo. Os quatro pontos que faltam para o total são o que só o Postgres
+para 93% sem nenhum banco externo. Os quatro pontos que faltam para o total são o que só o Postgres
 de verdade exercita: migrations, as categorias que a migration semeia, o agrupamento mensal do saldo
 e a tradução de constraint pelo nome. Quem responde pela cobertura é a suíte inteira.
 
 A suíte de API também responde por **quantos endpoints** têm teste, e o número sai no fim de toda
-rodada dela — hoje, 30 de 30. É uma cobertura diferente da de linhas: mede o contrato publicado, não
+rodada dela — hoje, 31 de 31. É uma cobertura diferente da de linhas: mede o contrato publicado, não
 o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 
 > **Ao medir, `concurrency = ["thread", "greenlet"]` não é opcional.** A ponte async do SQLAlchemy
@@ -45,7 +45,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `api/routes/health.py` | 26 | 92% |
 | `api/routes/reports.py` | 37 | 100% |
 | `api/routes/transactions.py` | 36 | 100% |
-| `api/routes/users.py` | 23 | 100% |
+| `api/routes/users.py` | 28 | 100% |
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 44 | 100% |
 | `core/config.py` | 90 | 96% |
@@ -75,8 +75,8 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `schemas/category.py` | 25 | 100% |
 | `schemas/transaction.py` | 48 | 100% |
 | `schemas/user.py` | 57 | 100% |
-| `services/admin_user_service.py` | 58 | 100% |
-| `services/auth_service.py` | 89 | 91% |
+| `services/admin_user_service.py` | 65 | 100% |
+| `services/auth_service.py` | 92 | 96% |
 | `services/balance_service.py` | 63 | 100% |
 | `services/category_service.py` | 49 | 100% |
 | `services/report_service.py` | 102 | 100% |
@@ -97,10 +97,7 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 
 | Onde | O que não é exercitado |
 |---|---|
-| `services/auth_service.py:90` | login de conta desativada → `AccountInactiveError` |
-| `services/auth_service.py:117` | refresh com token expirado |
-| `services/auth_service.py:121` | refresh de usuário que não existe mais |
-| `services/auth_service.py:123` | refresh de conta desativada |
+| `services/auth_service.py:121` | refresh de usuário que não existe mais — só por corrida: excluir a conta apaga os refresh tokens junto |
 | `services/auth_service.py:93` | rehash da senha quando o custo do argon2 mudou |
 | `core/security.py:154-155` | access token sem os claims obrigatórios |
 | `core/security.py:66-67` | `verify()` diante de um hash corrompido (`InvalidHashError`) |
@@ -110,6 +107,19 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `repositories/user_repository.py:55`, `category_repository.py:72`, `transaction_repository.py:134` | o erro genérico para constraint desconhecida |
 | `core/config.py:134` | `is_production` |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
+
+**Três dos quatro caminhos de `auth_service` que abriam esta lista saíram dela** — login e refresh de
+conta desativada, e refresh com token expirado —, cobertos por `tests/api/test_sessions.py`. Eram
+negação de acesso, exatamente onde um erro não aparece em teste manual e vira brecha em produção. O
+quarto, refresh de um usuário que não existe mais, só acontece se a conta for excluída entre as duas
+consultas da renovação.
+
+Escrever esses testes achou uma brecha que a cobertura não acusava. `services/admin_user_service.py`
+estava em 100%, e **desativar uma conta não revogava os refresh tokens**: enquanto ela ficava
+desativada nada passava, mas reativá-la devolvia as sessões antigas — inclusive a de quem tivesse
+motivado a desativação. A linha estava coberta; ninguém tinha afirmado o que acontece com as sessões
+depois. Agora a desativação revoga tudo no mesmo commit, e o teste de reativação reprova se isso
+voltar. `POST /users/me/logout-all` entra sem lacuna própria.
 
 **A listagem de lançamentos não tem mais filtro sem teste.** Os dois que faltavam — por tipo e por
 categoria — saíram da lista nesta fase, e por um caminho que vale registrar: quem os exercita é
@@ -148,9 +158,6 @@ resposta: `CategoryService.delete` fechava por `self._session.commit()` em vez d
 pulava a tradução e devolvia **500 em vez de 409**. A regra estava escrita e correta, e
 inalcançável. É o argumento inteiro deste documento: lacuna de cobertura não é número feio, é
 comportamento que ninguém olhou.
-
-O que mais pesa agora são os quatro caminhos de `auth_service`: são **negação de acesso**,
-exatamente onde um erro não aparece em teste manual e vira brecha em produção.
 
 ### Não são lacunas de teste
 

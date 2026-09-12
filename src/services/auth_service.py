@@ -143,6 +143,17 @@ class AuthService:
             record.revoked_at = self._clock.now_utc()
             await self._session.commit()
 
+    async def logout_all(self, user: User) -> None:
+        """Encerra a sessão em todos os dispositivos, inclusive no de quem pediu.
+
+        Revoga o refresh token vivo de cada família: nenhum dispositivo renova
+        mais, e cada um volta ao login quando o access token que tem em mãos
+        expirar — esse não é revogável (ver `core.security`). Idempotente como
+        `logout`: sem sessão viva, não há o que revogar.
+        """
+        await self._tokens.revoke_all_for_user(user.id, at=self._clock.now_utc())
+        await self._session.commit()
+
     def _issue_pair(self, user: User, *, family_id: UUID) -> tuple[TokenPair, RefreshToken]:
         """Emite o par e devolve também o registro, para quem precisa encadear."""
         now = self._clock.now_utc()
