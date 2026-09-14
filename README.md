@@ -184,6 +184,7 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | GET | `/users/me` | Dados do usuário autenticado | autenticado |
 | PATCH | `/users/me` | Atualiza o próprio perfil | autenticado |
 | POST | `/users/me/password` | Troca a senha e encerra todas as sessões | autenticado |
+| POST | `/users/me/logout-all` | Encerra a sessão em todos os dispositivos | autenticado |
 | DELETE | `/users/me` | Exclui a conta e tudo que pende dela | autenticado |
 | GET | `/categories` | Lista as do sistema e as próprias (`?kind=income\|expense`) | autenticado |
 | POST | `/categories` | Cria uma categoria própria | autenticado |
@@ -298,7 +299,9 @@ log. O relatório nunca cai por causa da marca.
   um lançamento. Trocar de biblioteca é reescrever esse arquivo, não caçar `drawString` pelo domínio.
 - **Access token** é JWT de 15 min, não revogável. **Refresh token** é string opaca de 30 dias,
   guardada só como SHA-256 e invalidada a cada uso; reapresentar um já rotacionado derruba a
-  linhagem inteira daquela sessão.
+  linhagem inteira daquela sessão. Sair de todos os dispositivos, trocar a senha e ser desativado
+  revogam todos os refresh tokens da conta. O desenho inteiro — claims, rotação, o que encerra o quê
+  e o guia para o front — está em **[`docs/autenticacao-jwt.md`](docs/autenticacao-jwt.md)**.
 - **Login tem limite de tentativas** — 5 a cada 5 min por IP, 10 a cada 10 min por e-mail — e toda
   tentativa conta, a certa inclusive: contar só as erradas deixaria uma rajada simultânea passar
   inteira antes de a primeira falha ser gravada. O slowapi mora só em `core/rate_limit.py`, atrás
@@ -333,7 +336,7 @@ para que rota nova apareça como lacuna até ganhar teste:
 
 ```
 ------------------------ cobertura de endpoints da API -------------------------
-30 de 30 endpoints cobertos (100%)
+31 de 31 endpoints cobertos (100%)
 ```
 
 **Só um domínio.** O filtro `k` vai direto para o `-k` do pytest, que casa com o nome do arquivo e

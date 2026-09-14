@@ -33,7 +33,12 @@ class RefreshTokenRepository:
         )
 
     async def revoke_all_for_user(self, user_id: UUID, *, at: datetime) -> None:
-        """Encerra todas as sessões: troca de senha, desativação, exclusão."""
+        """Encerra todas as sessões do usuário, de todas as famílias.
+
+        Chamado pelo logout em todos os dispositivos, pela troca de senha e pela
+        desativação da conta. A exclusão não passa por aqui: as linhas caem por
+        ON DELETE CASCADE.
+        """
         await self._session.execute(
             update(RefreshToken)
             .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
