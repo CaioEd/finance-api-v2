@@ -13,13 +13,16 @@ pela matriz em `tests/integration/test_authorization_matrix.py`.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from argon2 import PasswordHasher as Argon2PasswordHasher
 from sqlalchemy.exc import IntegrityError
 
+from core.clock import Clock
 from core.errors import (
     EmailTakenError,
     SelfTargetError,
@@ -30,9 +33,10 @@ from core.security import PasswordHasher
 from models.user import Role, User
 from repositories.admin_user_repository import UserFilters
 from schemas.user import AdminUserCreateIn, AdminUserUpdateIn
-from services.admin_user_service import AdminUserService, AdminUserStore
+from services.admin_user_service import AdminUserService, AdminUserStore, TokenRevoker
 
 PASSWORD = "senha-bem-comprida"
+NOW = datetime(2026, 9, 12, 15, 0, tzinfo=UTC)
 
 
 def make_user(
@@ -106,6 +110,16 @@ class FakeTransaction:
         self.rollbacks += 1
 
 
+class FakeTokenRevoker:
+    """Implementa `TokenRevoker`, guardando de quem encerrou as sessões e quando."""
+
+    def __init__(self) -> None:
+        self.revoked: list[tuple[UUID, datetime]] = []
+
+    async def revoke_all_for_user(self, user_id: UUID, *, at: datetime) -> None:
+        self.revoked.append((user_id, at))
+
+
 @pytest.fixture
 def hasher() -> PasswordHasher:
     # Custo mínimo: aqui interessa que a senha vire hash, não o quanto custa.
@@ -121,9 +135,17 @@ def build_service(
     store: FakeAdminUserStore,
     transaction: FakeTransaction,
     hasher: PasswordHasher,
+    revoker: FakeTokenRevoker | None = None,
 ) -> AdminUserService:
     users: AdminUserStore = store  # o fake precisa satisfazer o Protocol
-    return AdminUserService(transaction=transaction, users=users, hasher=hasher)
+    tokens: TokenRevoker = revoker or FakeTokenRevoker()
+    return AdminUserService(
+        transaction=transaction,
+        users=users,
+        tokens=tokens,
+        hasher=hasher,
+        clock=Clock(tz=ZoneInfo("America/Sao_Paulo"), instant=lambda: NOW),
+    )
 
 
 # ------------------------------------------------------------------- LIST
@@ -241,6 +263,39 @@ async def test_update_can_deactivate_someone(hasher: PasswordHasher, admin: User
     updated = await service.update_user(target.id, AdminUserUpdateIn(is_active=False), actor=admin)
 
     assert updated.is_active is False
+
+
+async def test_deactivating_someone_ends_every_session(hasher: PasswordHasher, admin: User) -> None:
+    """Sem isto, reativar a conta devolveria a sessão a quem estivesse com o refresh token."""
+    target = make_user()
+    revoker, transaction = FakeTokenRevoker(), FakeTransaction()
+    service = build_service(FakeAdminUserStore([target, admin]), transaction, hasher, revoker)
+
+    await service.update_user(target.id, AdminUserUpdateIn(is_active=False), actor=admin)
+
+    assert revoker.revoked == [(target.id, NOW)]
+    assert transaction.commits == 1, "a revogação fecha no mesmo commit da desativação"
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        AdminUserUpdateIn(role=Role.ADMIN),
+        AdminUserUpdateIn(is_active=True),
+        AdminUserUpdateIn(first_name="Ana Paula", is_active=None),
+    ],
+    ids=["papel", "reativacao", "is_active-nulo"],
+)
+async def test_an_update_that_does_not_deactivate_keeps_the_sessions(
+    hasher: PasswordHasher, admin: User, data: AdminUserUpdateIn
+) -> None:
+    target = make_user()
+    revoker = FakeTokenRevoker()
+    service = build_service(FakeAdminUserStore([target, admin]), FakeTransaction(), hasher, revoker)
+
+    await service.update_user(target.id, data, actor=admin)
+
+    assert revoker.revoked == []
 
 
 async def test_update_of_someone_who_does_not_exist_is_a_404(

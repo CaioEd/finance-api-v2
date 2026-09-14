@@ -125,7 +125,11 @@ def get_user_service(
 def get_admin_user_service(
     session: AsyncSession = Depends(get_session),
     users: AdminUserRepository = Depends(get_admin_user_repository),
+    tokens: RefreshTokenRepository = Depends(get_refresh_token_repository),
     hasher: PasswordHasher = Depends(get_password_hasher),
+    clock: Clock = Depends(get_clock),
 ) -> AdminUserService:
     """A sessão entra como `Transaction`: o serviço só usa commit e rollback."""
-    return AdminUserService(transaction=session, users=users, hasher=hasher)
+    return AdminUserService(
+        transaction=session, users=users, tokens=tokens, hasher=hasher, clock=clock
+    )
