@@ -1,9 +1,8 @@
 # Cobertura de testes
 
-Medida em **2026-09-12** com `make coverage`, sobre o estado que este commit entrega — a fase 5
-(relatórios em PDF de lançamentos e de saldos) concluída sobre a fase 4, com os três módulos novos
-(`core/pdf.py`, `services/report_service.py`, `api/routes/reports.py`) e a leitura de volta do texto
-dos PDFs em `tests/pdf_text.py`. Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
+Medida em **2026-09-14** com `make coverage`, sobre o estado que este commit entrega — o limite de
+tentativas no login (`core/rate_limit.py`, com o slowapi confinado a ele, e a regra em
+`AuthService.login`) sobre a fase 5 concluída. Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
 hash nesta linha ou é o do commit anterior ou não existe ainda. Para saber se envelheceu, compare a
 tabela de fases do `README.md` com a lista de módulos abaixo.
 
@@ -11,17 +10,21 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **96%** — 2003 linhas executáveis, 73 sem cobertura |
-| Suíte | 490 testes: 192 unitários, 177 de API, 121 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 92% — os 369 testes que rodam sem Docker |
-| Só os unitários | 55% — e está certo assim: unitário cobre regra, não fiação |
+| **Cobertura total** | **96%** — 2141 linhas executáveis, 71 sem cobertura |
+| Suíte | 544 testes: 235 unitários, 188 de API, 121 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 93% — os 423 testes que rodam sem Docker |
+| Só os unitários | 79% — número de import, não de regra; ver abaixo |
 
-Os 55% não são uma meta frustrada. Os testes unitários exercitam relógio, configuração,
-criptografia, a regra dos serviços e — desde a fase 5 — o desenho do PDF, que é código puro; rota,
-repositório e sessão precisam da aplicação de pé, e é a suíte de API que os alcança, daí o salto
-para 92% sem nenhum banco externo. Os quatro pontos que faltam para o total são o que só o Postgres
-de verdade exercita: migrations, as categorias que a migration semeia, o agrupamento mensal do saldo
-e a tradução de constraint pelo nome. Quem responde pela cobertura é a suíte inteira.
+Os 79% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
+nova coberta: o teste do aviso de subida em produção (`tests/unit/test_rate_limit.py`) chama
+`create_app`, e montar a aplicação importa todas as rotas, schemas e repositórios — as linhas de
+definição (decorador, classe, assinatura) passam a contar como executadas, embora nenhuma rota rode.
+O que os unitários de fato exercitam continua sendo relógio, configuração, criptografia, a regra dos
+serviços, o desenho do PDF e agora o limite de tentativas; rota, repositório e sessão precisam da
+aplicação de pé, e é a suíte de API que os alcança, daí os 93% sem nenhum banco externo. Os três
+pontos que faltam para o total são o que só o Postgres de verdade exercita: migrations, as
+categorias que a migration semeia, o agrupamento mensal do saldo e a tradução de constraint pelo
+nome. Quem responde pela cobertura é a suíte inteira.
 
 A suíte de API também responde por **quantos endpoints** têm teste, e o número sai no fim de toda
 rodada dela — hoje, 30 de 30. É uma cobertura diferente da de linhas: mede o contrato publicado, não
@@ -39,7 +42,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 |---|---|---|
 | `api/router.py` | 11 | 100% |
 | `api/routes/admin_users.py` | 26 | 100% |
-| `api/routes/auth.py` | 22 | 100% |
+| `api/routes/auth.py` | 23 | 100% |
 | `api/routes/balance.py` | 30 | 100% |
 | `api/routes/categories.py` | 35 | 100% |
 | `api/routes/health.py` | 26 | 92% |
@@ -48,17 +51,18 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `api/routes/users.py` | 23 | 100% |
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 44 | 100% |
-| `core/config.py` | 90 | 96% |
+| `core/config.py` | 108 | 97% |
 | `core/database.py` | 28 | 96% |
-| `core/errors.py` | 112 | 98% |
+| `core/errors.py` | 120 | 98% |
 | `core/pdf.py` | 192 | 100% |
+| `core/rate_limit.py` | 83 | 100% |
 | `core/security.py` | 72 | 95% |
 | `dependencies/auth.py` | 27 | 100% |
 | `dependencies/database.py` | 9 | 67% |
 | `dependencies/repositories.py` | 22 | 100% |
-| `dependencies/services.py` | 38 | 100% |
-| `dependencies/state.py` | 17 | 100% |
-| `main.py` | 39 | 95% |
+| `dependencies/services.py` | 39 | 100% |
+| `dependencies/state.py` | 24 | 100% |
+| `main.py` | 46 | 100% |
 | `models/category.py` | 27 | 93% |
 | `models/refresh_token.py` | 19 | 95% |
 | `models/transaction.py` | 32 | 97% |
@@ -76,7 +80,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `schemas/transaction.py` | 48 | 100% |
 | `schemas/user.py` | 57 | 100% |
 | `services/admin_user_service.py` | 58 | 100% |
-| `services/auth_service.py` | 89 | 91% |
+| `services/auth_service.py` | 102 | 92% |
 | `services/balance_service.py` | 63 | 100% |
 | `services/category_service.py` | 49 | 100% |
 | `services/report_service.py` | 102 | 100% |
@@ -84,10 +88,11 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
-30 dos 46 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
-`auth_service`, tratada abaixo. Os três módulos que a fase 5 acrescenta entram em 100%: o
-renderizador (`core/pdf.py`, 192 linhas), a regra (`services/report_service.py`) e as rotas
-(`api/routes/reports.py`). Nenhum repositório ficou abaixo de 94%.
+32 dos 47 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
+`auth_service`, tratada abaixo. O módulo novo, `core/rate_limit.py`, entra em 100%, e `main.py`
+chegou lá junto: o middleware de CORS, que nenhum teste montava, agora é exercitado pelo teste que
+confere o `Retry-After` exposto ao front. Os três módulos da fase 5 seguem em 100%, e nenhum
+repositório ficou abaixo de 94%.
 
 ## O que não está coberto
 
@@ -97,29 +102,38 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 
 | Onde | O que não é exercitado |
 |---|---|
-| `services/auth_service.py:90` | login de conta desativada → `AccountInactiveError` |
-| `services/auth_service.py:117` | refresh com token expirado |
-| `services/auth_service.py:121` | refresh de usuário que não existe mais |
-| `services/auth_service.py:123` | refresh de conta desativada |
-| `services/auth_service.py:93` | rehash da senha quando o custo do argon2 mudou |
+| `services/auth_service.py:101` | login de conta desativada → `AccountInactiveError` |
+| `services/auth_service.py:160` | refresh com token expirado |
+| `services/auth_service.py:164` | refresh de usuário que não existe mais |
+| `services/auth_service.py:166` | refresh de conta desativada |
+| `services/auth_service.py:104` | rehash da senha quando o custo do argon2 mudou |
 | `core/security.py:154-155` | access token sem os claims obrigatórios |
 | `core/security.py:66-67` | `verify()` diante de um hash corrompido (`InvalidHashError`) |
-| `core/config.py:119` | `JWT_SECRET_KEY` com menos de 32 caracteres |
-| `core/errors.py:231-232` | handler de exceção não tratada — o `500` genérico |
+| `core/config.py:148` | `JWT_SECRET_KEY` com menos de 32 caracteres |
+| `core/errors.py:246-247` | handler de exceção não tratada — o `500` genérico |
 | `api/routes/health.py:46-47` | readiness quando o banco não responde |
 | `repositories/user_repository.py:55`, `category_repository.py:72`, `transaction_repository.py:134` | o erro genérico para constraint desconhecida |
-| `core/config.py:134` | `is_production` |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
 
+**O limite de tentativas entra sem lacuna de linha**, e com a divisão de trabalho de sempre. A regra
+— IP antes do e-mail, e-mail em hash, a tentativa barrada sem banco nem argon2 — está em
+`tests/unit/test_auth_service.py`, com dublês; o resolvedor de IP e o contador de verdade, com o
+relógio parado para a janela móvel, em `tests/unit/test_rate_limit.py`; o `429` com `Retry-After`
+atravessando a aplicação, em `tests/api/test_login_rate_limit.py`. O que ele tem de não coberto não
+é código deste repositório: o storage Redis é configuração do `limits` (nenhum teste sobe um Redis),
+e qual cabeçalho cada proxy grava só o deploy mostra — `rate-limit.md` descreve como conferir o IP
+no log. `core/config.py:134` (`is_production`) saiu da lista: o aviso de subida a usa, e o teste do
+aviso a exercita.
+
 **A listagem de lançamentos não tem mais filtro sem teste.** Os dois que faltavam — por tipo e por
-categoria — saíram da lista nesta fase, e por um caminho que vale registrar: quem os exercita é
+categoria — saíram da lista na fase 5, e por um caminho que vale registrar: quem os exercita é
 `tests/api/test_reports.py`, porque exportar "só as despesas" ou "só o Mercado" é a mesma consulta
 com o mesmo filtro. Os testes existem para afirmar que o PDF sai com o recorte pedido; cobrir o
 `WHERE` foi consequência — como já havia acontecido com as duas pontas do filtro de datas, cobertas
 por `test_balance.py`. Continua não existindo `tests/integration/test_transactions.py`, e continua
 não fazendo falta: a matriz de CRUD exercita o ciclo inteiro de transações contra Postgres.
 
-A fase 5 entra sem lacuna própria, e com a divisão de trabalho que o desenho pede. O que a folha
+A fase 5 entrou sem lacuna própria, e com a divisão de trabalho que o desenho pede. O que a folha
 **diz** se verifica sem gerar PDF nenhum (`tests/unit/test_report_service.py`: linhas, totais,
 filtros impressos, o teto de 2000 lançamentos, o nome do arquivo), porque o serviço devolve um
 documento e não bytes. O que o renderizador **desenha** se verifica lendo o texto de volta do
@@ -159,14 +173,15 @@ exatamente onde um erro não aparece em teste manual e vira brecha em produção
 | `models/refresh_token.py:55` (`is_usable_at`) | **nada no código chama esta property** — `AuthService.refresh` checa `revoked_at` e `expires_at` direto |
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
 | `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness |
-| `core/config.py:140` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
-| `main.py:76` | o middleware de CORS só entra quando `CORS_ORIGINS` não é vazio, e a configuração de teste o deixa vazio |
+| `core/config.py:169` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
 | `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:121` | `__repr__`, texto de depuração |
 
 A primeira linha é o relatório de cobertura fazendo o trabalho dele: apontou código morto, não
 teste faltando. Ou passa a ser usada, ou sai. `models.user.is_admin` saiu desta lista sem ninguém
 escrever teste para ela — `CategoryService._mutable_or_fail` a chama para decidir quem altera uma
 categoria global, e a afirmação anterior de que "nada no código chama esta property" estava errada.
+`main.py:76`, o middleware de CORS, saiu pelo caminho oposto: ganhou teste, porque o `Retry-After`
+do `429` só chega ao front de outra origem se o CORS o expuser.
 
 ## Como regenerar
 

@@ -74,3 +74,38 @@ def test_a_report_logo_becomes_a_path() -> None:
     assert _settings(report_logo_path="assets/logo.png") == _settings(
         report_logo_path=Path("assets/logo.png")
     )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "rate_limit_login_ip_attempts",
+        "rate_limit_login_ip_window_seconds",
+        "rate_limit_login_email_attempts",
+        "rate_limit_login_email_window_seconds",
+        "trusted_proxy_count",
+    ],
+)
+def test_rate_limit_numbers_must_be_positive(field: str) -> None:
+    """Zero tentativas trancaria o login de todo mundo em vez de desligar o limite."""
+    with pytest.raises(ValidationError, match=field):
+        _settings(**{field: 0})
+
+
+def test_an_unknown_rate_limit_strategy_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="rate_limit_strategy"):
+        _settings(rate_limit_strategy="token-bucket")
+
+
+def test_a_blank_client_ip_header_is_the_same_as_none() -> None:
+    assert _settings(client_ip_header="   ").client_ip_header == ""
+
+
+def test_the_rate_limit_is_read_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RATE_LIMIT_LOGIN_IP_ATTEMPTS", "7")
+    monkeypatch.setenv("CLIENT_IP_HEADER", "X-Real-IP")
+
+    settings = _settings()
+
+    assert settings.rate_limit_login_ip_attempts == 7
+    assert settings.client_ip_header == "X-Real-IP"

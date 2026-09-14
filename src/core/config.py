@@ -10,10 +10,10 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import field_validator, model_validator
+from pydantic import PositiveInt, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -26,6 +26,9 @@ class Environment(StrEnum):
 
 CsvList = Annotated[list[str], NoDecode]
 """Lista lida do ambiente como `a,b,c` em vez de JSON."""
+
+RateLimitStrategy = Literal["moving-window", "fixed-window", "sliding-window-counter"]
+"""Estratégias do `limits`. Só a janela móvel é exata: "5 em quaisquer 5 minutos"."""
 
 
 class Settings(BaseSettings):
@@ -63,6 +66,14 @@ class Settings(BaseSettings):
     allowed_hosts: CsvList = ["*"]
     cors_origins: CsvList = []
 
+    client_ip_header: str = ""
+    """Onde o proxy da borda grava o IP de quem conectou; vazio é o IP do socket,
+    certo só sem proxy na frente. Railway: `X-Real-IP`. AWS ALB: `X-Forwarded-For`."""
+
+    trusted_proxy_count: PositiveInt = 1
+    """Quantos proxies confiáveis escrevem no cabeçalho. O IP sai dessa posição,
+    contada da direita — o que o próprio cliente mandou fica à esquerda."""
+
     # --- Autenticação -----------------------------------------------------
     jwt_algorithm: str = "HS256"
     access_token_ttl_seconds: int = 900
@@ -74,6 +85,18 @@ class Settings(BaseSettings):
     argon2_time_cost: int = 3
     argon2_memory_cost_kib: int = 65536
     argon2_parallelism: int = 4
+
+    # --- Limite de tentativas no login (docs/rate-limit.md) ----------------
+    rate_limit_enabled: bool = True
+    rate_limit_storage_url: str = "memory://"
+    """Onde os contadores vivem. `memory://` conta por processo: com mais de uma
+    réplica ou worker, cada um conta sozinho e o limite multiplica — aí, `redis://`."""
+
+    rate_limit_strategy: RateLimitStrategy = "moving-window"
+    rate_limit_login_ip_attempts: PositiveInt = 5
+    rate_limit_login_ip_window_seconds: PositiveInt = 300
+    rate_limit_login_email_attempts: PositiveInt = 10
+    rate_limit_login_email_window_seconds: PositiveInt = 600
 
     # --- Banco -----------------------------------------------------------
     db_echo: bool = False
@@ -95,6 +118,12 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("client_ip_header", mode="before")
+    @classmethod
+    def _blank_header_is_no_header(cls, value: object) -> object:
+        """`CLIENT_IP_HEADER= ` com espaço é ausência, não um cabeçalho chamado " "."""
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("app_timezone")
     @classmethod

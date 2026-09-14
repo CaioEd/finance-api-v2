@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 
 from dependencies.services import get_auth_service
+from dependencies.state import get_client_ip
 from schemas.auth import (
     LoginIn,
     LogoutIn,
@@ -46,16 +47,22 @@ async def register(
 @router.post(
     "/login",
     summary="Autentica por e-mail e senha",
+    description=(
+        "Toda tentativa conta, a certa inclusive, num limite por IP e noutro por e-mail "
+        "(por padrão, 5 a cada 5 minutos e 10 a cada 10 minutos)."
+    ),
     responses={
         401: {"description": "E-mail ou senha inválidos"},
         403: {"description": "Conta desativada"},
+        429: {"description": "Tentativas demais; `Retry-After` diz quantos segundos esperar"},
     },
 )
 async def login(
     data: LoginIn,
+    client_ip: str = Depends(get_client_ip),
     service: AuthService = Depends(get_auth_service),
 ) -> TokenPairOut:
-    pair = await service.login(data.email, data.password)
+    pair = await service.login(data.email, data.password, client_ip=client_ip)
     return TokenPairOut(
         access_token=pair.access_token,
         refresh_token=pair.refresh_token,

@@ -16,7 +16,7 @@ agregados e a exportação em PDF de todos eles.
 | 3 | Transações (receitas e despesas numa entidade só) | concluída |
 | 4 | Saldos: mês corrente, mês a mês, intervalo | concluída |
 | 5 | Relatório em PDF | concluída |
-| 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários entregue |
+| 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários e limite de tentativas no login entregues |
 
 ## Tech stack e requisitos
 
@@ -162,11 +162,12 @@ src/
 │   ├── security.py          argon2, JWT, tokens opacos
 │   ├── clock.py             fonte única de "agora"
 │   ├── pdf.py               desenho do PDF; único módulo que importa reportlab
+│   ├── rate_limit.py        limite de tentativas e IP do cliente; único que importa slowapi
 │   └── errors.py            catálogo de erros + handlers
 │
 └── dependencies/            toda a fiação de Depends, e só ela
     ├── database.py          get_session
-    ├── state.py             settings, clock, hasher e codec vindos de app.state
+    ├── state.py             settings, clock, hasher, codec, limitador e IP do cliente
     ├── auth.py              get_current_user, require_role
     ├── repositories.py
     └── services.py
@@ -177,7 +178,7 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | Método | Rota | O que faz | Acesso |
 |---|---|---|---|
 | POST | `/auth/register` | Cria a conta e devolve o par de tokens | — |
-| POST | `/auth/login` | Autentica por **e-mail** e senha | — |
+| POST | `/auth/login` | Autentica por **e-mail** e senha; `429` após 5 tentativas/5 min por IP ou 10/10 min por e-mail | — |
 | POST | `/auth/refresh` | Rotaciona o refresh token e emite um par novo | — |
 | POST | `/auth/logout` | Revoga o refresh token enviado (idempotente) | — |
 | GET | `/users/me` | Dados do usuário autenticado | autenticado |
@@ -298,6 +299,13 @@ log. O relatório nunca cai por causa da marca.
 - **Access token** é JWT de 15 min, não revogável. **Refresh token** é string opaca de 30 dias,
   guardada só como SHA-256 e invalidada a cada uso; reapresentar um já rotacionado derruba a
   linhagem inteira daquela sessão.
+- **Login tem limite de tentativas** — 5 a cada 5 min por IP, 10 a cada 10 min por e-mail — e toda
+  tentativa conta, a certa inclusive: contar só as erradas deixaria uma rajada simultânea passar
+  inteira antes de a primeira falha ser gravada. O slowapi mora só em `core/rate_limit.py`, atrás
+  do contrato `RateLimiter`; rota com decorador dele prenderia o projeto à biblioteca. **Atrás de
+  proxy, configure `CLIENT_IP_HEADER`** (Railway: `X-Real-IP`), senão todo cliente divide o limite
+  do IP do proxy. Provedores, Redis e como trocar a implementação em
+  [`docs/rate-limit.md`](docs/rate-limit.md).
 
 ## Como rodar todos os testes
 

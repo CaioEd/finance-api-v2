@@ -174,6 +174,12 @@ Access token é JWT de 15 min, sem estado e sem lista de revogação; carrega s�
 rotacionado a cada uso e agrupado por `family_id` — um refresh já revogado reaparecendo derruba a
 família inteira (`AuthService.refresh`).
 
+O login tem **limite de tentativas** (5/5 min por IP, 10/10 min por e-mail, toda tentativa conta),
+aplicado em `AuthService.login` sobre o contrato `RateLimiter` de `core/rate_limit.py` — o slowapi
+só aparece em `SlowapiRateLimiter`; não use os decoradores dele. O limitador e o `ClientIpResolver`
+moram em `app.state`; atrás de proxy, `CLIENT_IP_HEADER` decide de onde vem o IP. Ver
+`docs/rate-limit.md`.
+
 Autenticação é o **default**: cada domínio cria `APIRouter(dependencies=[Depends(get_current_user)])`
 e autorização usa `require_role(...)` **no router inteiro**, nunca rota a rota — assim esquecer a
 declaração fecha a rota em vez de abrir. Escopo por usuário é imposto **no repositório**, não no

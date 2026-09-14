@@ -17,6 +17,9 @@ dependencies = [
     "alembic>=1.14",
     # Relatórios em PDF; só core/pdf.py importa.
     "reportlab>=4.2",
+    # Limite de tentativas no login; só core/rate_limit.py importa. Conta com o
+    # `limits` por baixo — Redis pede também o pacote `redis` (docs/rate-limit.md).
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
