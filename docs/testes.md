@@ -9,17 +9,18 @@ consumir os relatórios em PDF do lado do front, `relatorios-pdf.md`.
 
 | Tipo | O que cobre | Onde | Testes | Postgres |
 |---|---|---|---|---|
-| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso | `tests/unit/` | 196 | não |
+| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso | `tests/unit/` | 239 | não |
 | **Matriz de autorização** | **quem** alcança cada rota: anônimo, autenticado e admin × rota pública, protegida e de admin | `tests/api/test_authorization_matrix.py` | 106 | não |
 | **Matriz de CRUD** | **o que** cada rota faz: criar → ler → listar → atualizar → excluir, os 404/422 e o PATCH parcial | `tests/api/test_crud_contract.py` | 57 | não |
 | **Tradução do SQLite** | o agrupamento mensal do saldo, única consulta que depende de uma função traduzida à mão | `tests/api/test_balance.py` | 4 | não |
 | **Relatórios em PDF** | a travessia inteira: a query string vira recorte, o recorte vira folha, e a folha chega com os cabeçalhos que fazem o navegador baixar | `tests/api/test_reports.py` | 12 | não |
 | **Sessões e tokens** | quanto dura cada token e o que encerra cada sessão: sair de todos os dispositivos, desativação, expiração | `tests/api/test_sessions.py` | 14 | não |
+| **Limite de tentativas** | o `429` do login com `Retry-After`: por IP, por e-mail entre IPs, `X-Forwarded-For` forjado e o cabeçalho exposto no CORS (ver `rate-limit.md`) | `tests/api/test_login_rate_limit.py` | 11 | não |
 | **Operacionais** | liveness e readiness | `tests/api/test_health.py` | 2 | não |
 | **Contrato de domínio** | o que só aquele recurso faz: rotação de refresh, categoria do sistema vs. do usuário, o saldo agregado e o seu escopo por dono | `tests/integration/test_auth.py`, `test_users.py`, `test_categories.py`, `test_admin_users.py`, `test_balance.py` | 107 | sim |
 | **Infraestrutura** | migrations, envelope de erro, health contra o banco real e o `seed-dev` | `tests/integration/test_health.py`, `test_error_envelope.py`, `test_dev_seed.py` | 14 | sim |
 
-Os sete primeiros tipos — 391 dos 512 testes — rodam **sem Docker e sem banco nenhum**. Só o que
+Os oito primeiros tipos — 445 dos 566 testes — rodam **sem Docker e sem banco nenhum**. Só o que
 depende do Postgres de verdade (migrations, dado semeado por migration, `NUMERIC`, índice parcial e
 o `date_trunc` do saldo mensal) sobe o serviço `db-test`.
 
@@ -34,7 +35,7 @@ criado e destruído a cada teste. Ela existe para que o contrato HTTP — rota, 
 erro, forma da resposta, escopo por dono — possa ser verificado numa máquina sem Docker.
 
 ```bash
-make test-api                                 # os 195 testes, ~20 s, sem Docker nem banco
+make test-api                                 # os 206 testes, ~20 s, sem Docker nem banco
 make test-api k=categorias                    # um recorte; vai direto para o -k do pytest
 .venv/bin/pytest tests/api                    # o mesmo, chamando o pytest na mão
 ```
@@ -73,8 +74,8 @@ O banco de teste sobe sozinho. Não existe passo de preparação em nenhum alvo.
 ## Rodar só um tipo
 
 ```bash
-make test-unit                                      # os 196 unitários, ~2 s, sem Docker
-make test-api                                       # os 195 de API, ~20 s, sem Docker
+make test-unit                                      # os 239 unitários, ~3 s, sem Docker
+make test-api                                       # os 206 de API, ~20 s, sem Docker
 make test-integration                               # tudo que exige Postgres
 
 .venv/bin/pytest -m "not integration"               # unitários + API: tudo que dispensa banco

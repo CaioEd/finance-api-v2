@@ -232,6 +232,7 @@ mudança na API, não no front.
 | `401 invalid_token` | descartar os tokens e ir para o login |
 | qualquer `401` de `/auth/refresh` | descartar os tokens e ir para o login — inclusive `token_reuse_detected`, que é também o que chega depois de um "sair de todos os dispositivos" feito em outro aparelho |
 | `403 account_inactive` | avisar que a conta está desativada e descartar os tokens |
+| `429 too_many_attempts` no `/auth/login` | avisar que é preciso esperar e só liberar nova tentativa depois dos segundos do `Retry-After` — ver `rate-limit.md` |
 
 ### Sair
 

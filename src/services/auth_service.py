@@ -6,6 +6,7 @@ Python puro: nada aqui conhece HTTP nem FastAPI. Falhas saem como
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID, uuid4
@@ -19,13 +20,17 @@ from core.errors import (
     AuthenticationError,
     InvalidRefreshTokenError,
     TokenReuseError,
+    TooManyAttemptsError,
 )
+from core.rate_limit import LoginRateLimits, RateLimiter
 from core.security import PasswordHasher, TokenCodec, fingerprint, generate_opaque_token
 from models.refresh_token import RefreshToken
 from models.user import Role, User
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.user_repository import UserRepository, translate_integrity_error
 from schemas.auth import RegisterIn
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +51,8 @@ class AuthService:
         codec: TokenCodec,
         clock: Clock,
         refresh_ttl: timedelta,
+        rate_limiter: RateLimiter,
+        login_limits: LoginRateLimits,
     ) -> None:
         self._session = session
         self._users = users
@@ -54,6 +61,8 @@ class AuthService:
         self._codec = codec
         self._clock = clock
         self._refresh_ttl = refresh_ttl
+        self._rate_limiter = rate_limiter
+        self._login_limits = login_limits
 
     async def register(self, data: RegisterIn) -> tuple[User, TokenPair]:
         user = User(
@@ -75,7 +84,9 @@ class AuthService:
         await self._session.commit()
         return user, pair
 
-    async def login(self, email: str, password: str) -> TokenPair:
+    async def login(self, email: str, password: str, *, client_ip: str) -> TokenPair:
+        await self._count_login_attempt(email=email, client_ip=client_ip)
+
         user = await self._users.get_by_email(email)
 
         if user is None:
@@ -96,6 +107,38 @@ class AuthService:
         pair, _ = self._issue_pair(user, family_id=uuid4())
         await self._session.commit()
         return pair
+
+    async def _count_login_attempt(self, *, email: str, client_ip: str) -> None:
+        """Conta a tentativa antes de olhar a senha, e barra quem passou do limite.
+
+        Toda tentativa conta, a certa inclusive. Contar só as erradas pediria
+        saber o resultado antes de contar, e uma rajada de requisições
+        simultâneas passaria inteira pela checagem antes de a primeira falha ser
+        gravada — exatamente o que o limite existe para barrar. A tentativa
+        barrada não chega ao argon2: não gasta CPU e não revela se a senha estava
+        certa.
+
+        O IP vem primeiro, e quem já estourou nele não gasta a cota do e-mail:
+        sem isso, uma rajada barrada de um endereço só trancaria a conta alheia
+        na hora.
+        """
+        checks = (
+            ("ip", self._login_limits.per_ip, f"login:ip:{client_ip}"),
+            # O e-mail entra como hash: o storage — um Redis, amanhã — não passa a
+            # guardar a lista de quem tentou entrar.
+            (
+                "e-mail",
+                self._login_limits.per_email,
+                f"login:email:{fingerprint(email.strip().lower())}",
+            ),
+        )
+        for scope, limit, key in checks:
+            result = await self._rate_limiter.hit(limit, key)
+            if not result.allowed:
+                # O IP no log é o que permite conferir, no deploy, que o proxy está
+                # configurado: ele precisa ser o do cliente, não o do proxy.
+                logger.warning("login barrado pelo limite por %s (ip=%s)", scope, client_ip)
+                raise TooManyAttemptsError(retry_after_seconds=result.retry_after_seconds)
 
     async def refresh(self, raw_token: str) -> TokenPair:
         now = self._clock.now_utc()

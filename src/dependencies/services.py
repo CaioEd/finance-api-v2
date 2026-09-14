@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.clock import Clock
 from core.config import Settings
 from core.pdf import Brand
+from core.rate_limit import LoginRateLimits, RateLimiter
 from core.security import PasswordHasher, TokenCodec
 from dependencies.database import get_session
 from dependencies.repositories import (
@@ -25,7 +26,13 @@ from dependencies.repositories import (
     get_transaction_repository,
     get_user_repository,
 )
-from dependencies.state import get_app_settings, get_clock, get_password_hasher, get_token_codec
+from dependencies.state import (
+    get_app_settings,
+    get_clock,
+    get_password_hasher,
+    get_rate_limiter,
+    get_token_codec,
+)
 from repositories.admin_user_repository import AdminUserRepository
 from repositories.balance_repository import BalanceRepository
 from repositories.category_repository import CategoryRepository
@@ -49,6 +56,7 @@ def get_auth_service(
     codec: TokenCodec = Depends(get_token_codec),
     clock: Clock = Depends(get_clock),
     settings: Settings = Depends(get_app_settings),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> AuthService:
     return AuthService(
         session=session,
@@ -58,6 +66,8 @@ def get_auth_service(
         codec=codec,
         clock=clock,
         refresh_ttl=timedelta(days=settings.refresh_token_ttl_days),
+        rate_limiter=rate_limiter,
+        login_limits=LoginRateLimits.from_settings(settings),
     )
 
 

@@ -24,6 +24,7 @@ from core.clock import Clock
 from core.config import Settings, get_settings
 from core.database import Database
 from core.errors import register_exception_handlers
+from core.rate_limit import ClientIpResolver, build_rate_limiter
 from core.security import PasswordHasher, TokenCodec
 from version import __version__
 
@@ -64,6 +65,11 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
     app.state.clock = clock or Clock(tz=settings.tzinfo)
     app.state.password_hasher = PasswordHasher.from_settings(settings)
     app.state.token_codec = TokenCodec.from_settings(settings)
+    # O limitador guarda os contadores de tentativa: um por aplicação, e não de
+    # módulo, então cada `create_app` — cada teste — começa do zero.
+    app.state.rate_limiter = build_rate_limiter(settings)
+    app.state.client_ip_resolver = ClientIpResolver.from_settings(settings)
+    _warn_if_the_client_ip_is_the_proxy(settings)
 
     register_exception_handlers(app)
 
@@ -79,10 +85,27 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
-            # Sem isto o front noutra origem não lê o nome do arquivo dos relatórios.
-            expose_headers=["Content-Disposition"],
+            # Sem isto o front noutra origem não lê o nome do arquivo dos
+            # relatórios, nem quanto esperar depois de um 429 no login.
+            expose_headers=["Content-Disposition", "Retry-After"],
         )
 
     app.include_router(health_router)
     app.include_router(api_router)
     return app
+
+
+def _warn_if_the_client_ip_is_the_proxy(settings: Settings) -> None:
+    """Avisa quando o limite por IP de produção provavelmente conta o proxy.
+
+    Em produção quase sempre há proxy na frente (Railway, ALB), e sem
+    `CLIENT_IP_HEADER` todo cliente chega com o IP dele: o limite por IP passa a
+    valer para todos juntos, e poucas senhas erradas de quem quer que seja
+    barram o login de todo mundo. Não impede a subida — pode não haver proxy
+    mesmo —, mas deixa o aviso no log do deploy.
+    """
+    if settings.is_production and settings.rate_limit_enabled and not settings.client_ip_header:
+        logger.warning(
+            "CLIENT_IP_HEADER vazio em produção: atrás de proxy, todos os clientes dividem "
+            "o mesmo limite de login por IP. Ver docs/rate-limit.md"
+        )

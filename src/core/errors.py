@@ -35,6 +35,8 @@ class DomainError(Exception):
     ) -> None:
         self.message = message or self.message
         self.details = details or []
+        # Cabeçalhos que acompanham a resposta, como o `Retry-After` de um 429.
+        self.headers: dict[str, str] = {}
         super().__init__(self.message)
 
 
@@ -98,6 +100,18 @@ class AccountInactiveError(DomainError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "account_inactive"
     message = "Conta desativada."
+
+
+class TooManyAttemptsError(DomainError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "too_many_attempts"
+    message = "Muitas tentativas. Aguarde antes de tentar de novo."
+    # Mensagem única para o limite do IP e o do e-mail: dizer qual estourou
+    # ensinaria a quem ataca qual das duas chaves trocar.
+
+    def __init__(self, *, retry_after_seconds: int) -> None:
+        super().__init__()
+        self.headers = {"Retry-After": str(retry_after_seconds)}
 
 
 class UserNotFoundError(NotFoundError):
@@ -200,6 +214,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=error_payload(exc.code, exc.message, exc.details),
+            headers=exc.headers or None,
         )
 
     @app.exception_handler(RequestValidationError)
