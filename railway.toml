@@ -1,0 +1,23 @@
+# Deploy na Railway (config-as-code). O que está aqui sobrepõe o painel.
+# Variáveis de ambiente não moram aqui: são configuradas no serviço, no painel.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Migration é passo deliberado, não efeito colateral da subida: o entrypoint não migra
+# fora de local/test. O pre-deploy roda uma vez por deploy, num container à parte com as
+# mesmas variáveis e acesso à rede privada; se falhar, o deploy para e a versão anterior
+# continua no ar.
+preDeployCommand = ["alembic upgrade head"]
+
+# Readiness, não liveness: o tráfego só passa para a versão nova quando ela alcança o banco.
+# A Railway chama o healthcheck só durante o deploy, com Host `healthcheck.railway.app` —
+# que precisa estar em ALLOWED_HOSTS, ou o TrustedHostMiddleware responde 400 e o deploy
+# nunca fica saudável.
+healthcheckPath = "/health/ready"
+healthcheckTimeout = 120
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
