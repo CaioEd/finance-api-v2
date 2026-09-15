@@ -1,11 +1,12 @@
 # Cobertura de testes
 
-Medida em **2026-09-14** com `make coverage`, sobre o estado que este commit entrega — a fase 5
+Medida em **2026-09-15** com `make coverage`, sobre o estado que este commit entrega — a fase 5
 concluída, mais duas frentes de autenticação. O encerramento de sessões: sair de todos os
 dispositivos (`POST /users/me/logout-all`), a desativação pelo admin revogando os refresh tokens, e
 `tests/api/test_sessions.py` fixando quanto dura cada token e o que encerra cada sessão. E o limite
 de tentativas no login (`core/rate_limit.py`, com o slowapi confinado a ele, e a regra em
-`AuthService.login`). Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
+`AuthService.login`). Por último, `tests/api/test_admin_users.py`: o contrato de `/admin/users` que
+o painel de administração do front passou a consumir. Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
 hash nesta linha ou é o do commit anterior ou não existe ainda. Para saber se envelheceu, compare a
 tabela de fases do `README.md` com a lista de módulos abaixo.
 
@@ -14,8 +15,8 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 | | |
 |---|---|
 | **Cobertura total** | **97%** — 2156 linhas executáveis, 68 sem cobertura |
-| Suíte | 566 testes: 239 unitários, 206 de API, 121 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 94% — os 445 testes que rodam sem Docker |
+| Suíte | 591 testes: 239 unitários, 231 de API, 121 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 94% — os 470 testes que rodam sem Docker |
 | Só os unitários | 79% — número de import, não de regra; ver abaixo |
 
 Os 79% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
@@ -137,6 +138,14 @@ atravessando a aplicação, em `tests/api/test_login_rate_limit.py`. O que ele t
 e qual cabeçalho cada proxy grava só o deploy mostra — `rate-limit.md` descreve como conferir o IP
 no log. `core/config.py:134` (`is_production`) saiu da lista: o aviso de subida a usa, e o teste do
 aviso a exercita.
+
+**O painel de administração não mexe em número nenhum**, e isso não é defeito da medição: as rotas,
+o serviço e o repositório de `/admin/users` já estavam em 100%, e os 25 testes de
+`tests/api/test_admin_users.py` passam por linhas que as matrizes e `tests/integration/` já
+executavam. O que eles acrescentam é afirmação, não linha — que a listagem traz a conta de quem
+administra, que o `409` diz qual campo colidiu pelo `code`, que o papel dado na criação vale na
+requisição seguinte e que a edição recusa senha. É exatamente do que a tela depende, e agora roda
+sem Docker.
 
 **A listagem de lançamentos não tem mais filtro sem teste.** Os dois que faltavam — por tipo e por
 categoria — saíram da lista na fase 5, e por um caminho que vale registrar: quem os exercita é
