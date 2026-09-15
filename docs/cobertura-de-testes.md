@@ -15,8 +15,8 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 | | |
 |---|---|
 | **Cobertura total** | **97%** — 2156 linhas executáveis, 68 sem cobertura |
-| Suíte | 591 testes: 239 unitários, 231 de API, 121 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 94% — os 470 testes que rodam sem Docker |
+| Suíte | 595 testes: 239 unitários, 235 de API, 121 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 94% — os 474 testes que rodam sem Docker |
 | Só os unitários | 79% — número de import, não de regra; ver abaixo |
 
 Os 79% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
@@ -140,11 +140,12 @@ no log. `core/config.py:134` (`is_production`) saiu da lista: o aviso de subida 
 aviso a exercita.
 
 **O painel de administração não mexe em número nenhum**, e isso não é defeito da medição: as rotas,
-o serviço e o repositório de `/admin/users` já estavam em 100%, e os 25 testes de
+o serviço e o repositório de `/admin/users` já estavam em 100%, e os 29 testes de
 `tests/api/test_admin_users.py` passam por linhas que as matrizes e `tests/integration/` já
 executavam. O que eles acrescentam é afirmação, não linha — que a listagem traz a conta de quem
 administra, que o `409` diz qual campo colidiu pelo `code`, que o papel dado na criação vale na
-requisição seguinte e que a edição recusa senha. É exatamente do que a tela depende, e agora roda
+requisição seguinte, que a edição recusa senha e que a exclusão leva junto lançamentos, categorias
+e sessões. É exatamente do que a tela depende, e agora roda
 sem Docker.
 
 **A listagem de lançamentos não tem mais filtro sem teste.** Os dois que faltavam — por tipo e por

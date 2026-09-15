@@ -4,22 +4,28 @@ As duas matrizes já dizem quem alcança estas rotas e que elas criam, listam,
 atualizam e excluem. O que fica aqui é o que só este recurso tem, e do que a
 tela do front depende: a listagem traz a própria conta do administrador, o
 papel escolhido na criação vale na hora, o conflito diz **qual** campo colidiu
-(o formulário marca o campo certo pelo `code`) e a própria conta não se edita
-por aqui.
+(o formulário marca o campo certo pelo `code`), a exclusão leva junto o que é
+da conta, e a própria conta não se edita nem se exclui por aqui.
 
 Irmão de `tests/integration/test_admin_users.py`, que cobre o mesmo recurso
-contra Postgres — paginação estável, curingas da busca e o que acontece com as
-sessões de quem foi excluído. Nada abaixo depende de SQL que o SQLite não tenha:
-o nome da constraint violada, que o conflito precisa, é reposto por
-`tests/api/sqlite_backend.py`.
+contra Postgres — paginação estável e curingas da busca. Nada abaixo depende de
+SQL que o SQLite não tenha: o nome da constraint violada, que o conflito
+precisa, é reposto por `tests/api/sqlite_backend.py`, que também liga as chaves
+estrangeiras — sem isso a cascata da exclusão passaria sem ter acontecido.
 """
 
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.category import Category
+from models.refresh_token import RefreshToken
+from models.transaction import Transaction
 from tests.api.client import ApiClient, Response
 from tests.api.factories import register_admin, register_user
 from tests.factories import DEFAULT_PASSWORD, RegisteredUser
@@ -311,3 +317,97 @@ def test_admin_cannot_edit_their_own_account_here(client: ApiClient, body: dict[
     assert error_code(response) == "self_target_forbidden"
     me = client.get("/api/v1/users/me", headers=admin.auth).json()
     assert (me["first_name"], me["role"], me["is_active"]) == ("Ana", "admin", True)
+
+
+# -------------------------------------------------------------------- exclusão
+
+
+def rows_owned_by(client: ApiClient, user_id: str) -> dict[str, int]:
+    """Quantas linhas ainda pendem da conta, contadas no banco: rota nenhuma lista as de outro."""
+
+    async def count(session: AsyncSession) -> dict[str, int]:
+        owner = UUID(user_id)
+        counts: dict[str, int] = {}
+        for name, model in (
+            ("categories", Category),
+            ("transactions", Transaction),
+            ("refresh_tokens", RefreshToken),
+        ):
+            statement = select(func.count()).select_from(model).where(model.user_id == owner)
+            counts[name] = int(await session.scalar(statement) or 0)
+        return counts
+
+    return client.in_the_database(count)
+
+
+def test_delete_takes_the_account_and_everything_it_owns(client: ApiClient) -> None:
+    """O modal de confirmação promete que lançamentos, categorias e sessões vão junto.
+
+    O lançamento aponta para uma categoria da própria conta de propósito: as duas
+    caem na mesma instrução, e é o `NO ACTION` da chave do lançamento que deixa isso
+    passar (ver `models/transaction.py`).
+    """
+    admin = register_admin(client)
+    bruno = register_user(client, email="bruno@exemplo.com", username="bruno")
+    category = client.post(
+        "/api/v1/categories", headers=bruno.auth, json={"name": "Freela", "kind": "income"}
+    )
+    assert category.status_code == 201, category.text
+    transaction = client.post(
+        "/api/v1/transactions",
+        headers=bruno.auth,
+        json={"amount": "150.00", "category_id": category.json()["id"], "description": "Site"},
+    )
+    assert transaction.status_code == 201, transaction.text
+    assert all(rows_owned_by(client, bruno.id).values()), "o cenário não criou o que excluir"
+
+    response = client.delete(f"{USERS}/{bruno.id}", headers=admin.auth)
+
+    assert response.status_code == 204
+    assert not response.content
+    assert rows_owned_by(client, bruno.id) == {
+        "categories": 0,
+        "transactions": 0,
+        "refresh_tokens": 0,
+    }
+    listed = client.get(USERS, headers=admin.auth).json()
+    assert [item["id"] for item in listed["items"]] == [admin.id]
+
+
+def test_a_deleted_account_loses_access_at_once(client: ApiClient) -> None:
+    """O access token ainda não venceu, mas aponta para ninguém: 401, e o login também cai."""
+    admin = register_admin(client)
+    bruno = register_user(client, email="bruno@exemplo.com", username="bruno")
+
+    assert client.delete(f"{USERS}/{bruno.id}", headers=admin.auth).status_code == 204
+
+    me = client.get("/api/v1/users/me", headers=bruno.auth)
+    assert me.status_code == 401
+    assert error_code(me) == "invalid_token"
+    login = log_in(client, bruno.email, bruno.password)
+    assert login.status_code == 401
+    assert error_code(login) == "invalid_credentials"
+
+
+def test_deleting_someone_already_gone_names_the_reason(client: ApiClient) -> None:
+    """Outra aba já excluiu: o `code` é o que deixa a tela recarregar a lista em vez de insistir."""
+    admin = register_admin(client)
+    bruno = register_user(client, email="bruno@exemplo.com", username="bruno")
+
+    first = client.delete(f"{USERS}/{bruno.id}", headers=admin.auth)
+    again = client.delete(f"{USERS}/{bruno.id}", headers=admin.auth)
+
+    assert first.status_code == 204
+    assert again.status_code == 404
+    assert error_code(again) == "user_not_found"
+
+
+def test_admin_cannot_delete_their_own_account_here(client: ApiClient) -> None:
+    """A tela esconde a lixeira na própria linha; a API recusa do mesmo jeito."""
+    admin = register_admin(client)
+
+    response = client.delete(f"{USERS}/{admin.id}", headers=admin.auth)
+
+    assert response.status_code == 403
+    assert error_code(response) == "self_target_forbidden"
+    assert client.get("/api/v1/users/me", headers=admin.auth).status_code == 200
