@@ -5,9 +5,9 @@ repositório — o mesmo desenho de `api.routes.transactions`.
 
 Criar uma recorrência por aqui não registra lançamento nenhum de imediato, a
 não ser que a primeira data já seja hoje. O caminho de "registrar a despesa e
-repeti-la todo mês" é `POST /transactions` com `recurrence`; esta rota serve a
-quem quer só a regra, e a tudo que vem depois dela: listar, editar, pausar e
-excluir.
+repeti-la todo mês" é `POST /transactions` com `recurrence` — ou `PATCH`, para
+um lançamento que já existe; esta rota serve a quem quer só a regra, e a tudo
+que vem depois dela: listar, editar, pausar e excluir.
 """
 
 from __future__ import annotations

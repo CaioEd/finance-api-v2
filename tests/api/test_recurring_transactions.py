@@ -136,6 +136,115 @@ def test_a_refused_transaction_leaves_no_rule_behind(client: ApiClient) -> None:
     assert transactions_of(client, ana) == []
 
 
+# ---------------------------------------------- pela edição do lançamento
+
+
+def a_plain_transaction(client: ApiClient, user: RegisteredUser, category: str) -> dict[str, Any]:
+    response = client.post(
+        TRANSACTIONS,
+        headers=user.auth,
+        json={"amount": "39.90", "category_id": category, "occurred_on": "2099-11-20"},
+    )
+    assert response.status_code == 201, response.text
+    created: dict[str, Any] = response.json()
+    return created
+
+
+def test_an_existing_transaction_can_become_recurring(client: ApiClient) -> None:
+    """Lançada avulsa e editada depois: a regra copia o lançamento editado e começa depois dele.
+
+    O lançamento em si não muda de data — ele continua sendo o do mês dele.
+    """
+    ana = register_user(client)
+    streaming = a_category(client, ana, name="Streaming", kind="expense")
+    avulsa = a_plain_transaction(client, ana, streaming)
+
+    response = client.patch(
+        f"{TRANSACTIONS}/{avulsa['id']}",
+        headers=ana.auth,
+        json={"amount": "55.90", "description": "Netflix", "recurrence": {"day_of_month": 5}},
+    )
+
+    assert response.status_code == 200, response.text
+    editada = response.json()
+    assert editada["recurring_transaction_id"] is not None
+    assert (editada["amount"], editada["occurred_on"]) == ("55.90", "2099-11-20")
+    [rule] = client.get(RECURRING, headers=ana.auth).json()["items"]
+    assert rule["id"] == editada["recurring_transaction_id"]
+    assert (rule["amount"], rule["description"], rule["day_of_month"]) == ("55.90", "Netflix", 5)
+    assert rule["next_occurrence_on"] == "2099-12-05"
+    lido = client.get(f"{TRANSACTIONS}/{avulsa['id']}", headers=ana.auth).json()
+    assert lido["recurring_transaction_id"] == rule["id"]
+
+
+def test_asking_twice_for_a_recurrence_is_a_conflict(client: ApiClient) -> None:
+    """O segundo pedido — reenvio do formulário, outra aba — não cria outra regra."""
+    ana = register_user(client)
+    streaming = a_category(client, ana, name="Streaming", kind="expense")
+    avulsa = a_plain_transaction(client, ana, streaming)
+    url = f"{TRANSACTIONS}/{avulsa['id']}"
+    client.patch(url, headers=ana.auth, json={"recurrence": {"day_of_month": 5}}).raise_for_status()
+
+    response = client.patch(
+        url, headers=ana.auth, json={"amount": "1.00", "recurrence": {"day_of_month": 10}}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "transaction_already_recurring"
+    assert client.get(RECURRING, headers=ana.auth).json()["total"] == 1
+    assert client.get(url, headers=ana.auth).json()["amount"] == "39.90"
+
+
+def test_a_transaction_registered_by_a_rule_cannot_start_another(client: ApiClient) -> None:
+    ana = register_user(client)
+    streaming = a_category(client, ana, name="Streaming", kind="expense")
+    a_rule(
+        client, ana, amount="39.90", category_id=streaming, day_of_month=5, starts_on="2099-01-01"
+    )
+    run_scheduler_on(client, date(2099, 1, 10))
+    [gerado] = transactions_of(client, ana)
+
+    response = client.patch(
+        f"{TRANSACTIONS}/{gerado['id']}", headers=ana.auth, json={"recurrence": {"day_of_month": 5}}
+    )
+
+    assert response.status_code == 409
+
+
+def test_once_the_rule_is_deleted_the_transaction_can_recur_again(client: ApiClient) -> None:
+    """Excluir a regra desfaz o vínculo (`SET NULL`), e com ele a trava do 409."""
+    ana = register_user(client)
+    streaming = a_category(client, ana, name="Streaming", kind="expense")
+    avulsa = a_plain_transaction(client, ana, streaming)
+    url = f"{TRANSACTIONS}/{avulsa['id']}"
+    primeira = client.patch(url, headers=ana.auth, json={"recurrence": {"day_of_month": 5}}).json()
+    client.delete(f"{RECURRING}/{primeira['recurring_transaction_id']}", headers=ana.auth)
+
+    response = client.patch(url, headers=ana.auth, json={"recurrence": {"day_of_month": 20}})
+
+    assert response.status_code == 200
+    assert response.json()["recurring_transaction_id"] not in {
+        None,
+        primeira["recurring_transaction_id"],
+    }
+
+
+def test_a_null_recurrence_on_patch_changes_nothing(client: ApiClient) -> None:
+    ana = register_user(client)
+    streaming = a_category(client, ana, name="Streaming", kind="expense")
+    avulsa = a_plain_transaction(client, ana, streaming)
+
+    response = client.patch(
+        f"{TRANSACTIONS}/{avulsa['id']}",
+        headers=ana.auth,
+        json={"amount": "12.00", "recurrence": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["recurring_transaction_id"] is None
+    assert client.get(RECURRING, headers=ana.auth).json()["total"] == 0
+
+
 # ------------------------------------------------------------- o agendador
 
 

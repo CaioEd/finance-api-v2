@@ -15,9 +15,9 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **97%** — 2552 linhas executáveis, 69 sem cobertura |
-| Suíte | 734 testes: 319 unitários, 287 de API, 128 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 95% — os 606 testes que rodam sem Docker |
+| **Cobertura total** | **97%** — 2566 linhas executáveis, 69 sem cobertura |
+| Suíte | 746 testes: 325 unitários, 292 de API, 129 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 95% — os 617 testes que rodam sem Docker |
 | Só os unitários | 81% — número de import, não de regra; ver abaixo |
 
 Os 81% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
@@ -54,13 +54,13 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `api/routes/health.py` | 26 | 92% |
 | `api/routes/recurring_transactions.py` | 34 | 100% |
 | `api/routes/reports.py` | 37 | 100% |
-| `api/routes/transactions.py` | 36 | 100% |
+| `api/routes/transactions.py` | 37 | 100% |
 | `api/routes/users.py` | 28 | 100% |
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 44 | 100% |
 | `core/config.py` | 112 | 98% |
 | `core/database.py` | 28 | 96% |
-| `core/errors.py` | 123 | 98% |
+| `core/errors.py` | 126 | 98% |
 | `core/pdf.py` | 192 | 100% |
 | `core/rate_limit.py` | 83 | 100% |
 | `core/scheduler.py` | 33 | 100% |
@@ -82,14 +82,14 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `repositories/category_repository.py` | 34 | 95% |
 | `repositories/recurring_transaction_repository.py` | 40 | 100% |
 | `repositories/refresh_token_repository.py` | 18 | 100% |
-| `repositories/transaction_repository.py` | 54 | 97% |
+| `repositories/transaction_repository.py` | 57 | 97% |
 | `repositories/user_repository.py` | 27 | 94% |
 | `schemas/auth.py` | 28 | 100% |
 | `schemas/balance.py` | 25 | 100% |
 | `schemas/base.py` | 7 | 100% |
 | `schemas/category.py` | 25 | 100% |
 | `schemas/recurring_transaction.py` | 45 | 100% |
-| `schemas/transaction.py` | 58 | 100% |
+| `schemas/transaction.py` | 60 | 100% |
 | `schemas/user.py` | 57 | 100% |
 | `services/admin_user_service.py` | 65 | 100% |
 | `services/auth_service.py` | 105 | 97% |
@@ -98,7 +98,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `services/recurrence.py` | 25 | 100% |
 | `services/recurring_transaction_service.py` | 104 | 100% |
 | `services/report_service.py` | 102 | 100% |
-| `services/transaction_service.py` | 86 | 100% |
+| `services/transaction_service.py` | 91 | 100% |
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
@@ -122,9 +122,9 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `core/security.py:154-155` | access token sem os claims obrigatórios |
 | `core/security.py:66-67` | `verify()` diante de um hash corrompido (`InvalidHashError`) |
 | `core/config.py:155` | `JWT_SECRET_KEY` com menos de 32 caracteres |
-| `core/errors.py:252-253` | handler de exceção não tratada — o `500` genérico |
+| `core/errors.py:260-261` | handler de exceção não tratada — o `500` genérico |
 | `api/routes/health.py:46-47` | readiness quando o banco não responde |
-| `repositories/user_repository.py:55`, `category_repository.py:74`, `transaction_repository.py:140` | o erro genérico para constraint desconhecida |
+| `repositories/user_repository.py:55`, `category_repository.py:74`, `transaction_repository.py:149` | o erro genérico para constraint desconhecida |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
 
 **Três dos quatro caminhos de `auth_service` que abriam esta lista saíram dela** — login e refresh de
@@ -146,7 +146,10 @@ regra pausada — é função pura e está em `tests/unit/test_recurrence.py`; a
 no mês seguinte ao lançamento, retomada que não cobra a pausa, troca de dia que não pula nem repete
 mês), com dublês, em `test_recurring_transaction_service.py` e `test_transaction_service.py`; o laço
 em segundo plano e a ligação dele na subida, sem banco, em `test_scheduler.py`; a travessia HTTP,
-com o agendador chamado direto e um relógio parado em 2099, em `tests/api/test_recurring_transactions.py`.
+com o agendador chamado direto e um relógio parado em 2099, em `tests/api/test_recurring_transactions.py`
+— inclusive tornar recorrente, pelo `PATCH`, um lançamento que nasceu avulso, e o `409` de quem já é.
+Esse `PATCH` também tem teste contra Postgres, porque lá a FK é conferida a cada instrução: o `UPDATE`
+do lançamento só passa se sair depois do `INSERT` da regra.
 Só que o SQLite ignora `FOR UPDATE ... SKIP LOCKED`, e é essa cláusula que impede duas réplicas de
 lançarem o mesmo mês duas vezes: `repositories/recurring_transaction_repository.py` estaria em 100%
 com ela apagada. Por isso `tests/integration/test_recurring_transactions.py` trava a regra numa

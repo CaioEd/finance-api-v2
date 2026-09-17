@@ -21,7 +21,7 @@ from schemas.recurring_transaction import (
     RecurringTransactionOut,
     RecurringTransactionUpdateIn,
 )
-from schemas.transaction import TransactionCategoryOut, TransactionCreateIn
+from schemas.transaction import TransactionCategoryOut, TransactionCreateIn, TransactionUpdateIn
 
 CATEGORY_ID = uuid4()
 
@@ -150,3 +150,14 @@ def test_the_recurrence_of_a_transaction_is_validated(recurrence: dict[str, obje
         TransactionCreateIn.model_validate(
             {"amount": "1.00", "category_id": CATEGORY_ID, "recurrence": recurrence}
         )
+
+
+def test_an_existing_transaction_may_ask_to_become_recurring() -> None:
+    """No PATCH, `recurrence` é mudança como outra qualquer — e nulo continua sendo "não mexa"."""
+    pedido = TransactionUpdateIn.model_validate({"recurrence": {"day_of_month": 5}})
+    nulo = TransactionUpdateIn.model_validate({"amount": "1.00", "recurrence": None})
+
+    assert pedido.changes() == {"recurrence": {"day_of_month": 5}}
+    assert "recurrence" not in nulo.changes()
+    with pytest.raises(ValidationError):
+        TransactionUpdateIn.model_validate({"recurrence": {"day_of_month": 32}})

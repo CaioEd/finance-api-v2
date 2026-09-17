@@ -40,6 +40,9 @@ Responses = dict[int | str, dict[str, Any]]
 
 NOT_FOUND: Responses = {404: {"description": "Lançamento inexistente ou de outro usuário"}}
 BAD_CATEGORY: Responses = {422: {"description": "Categoria inexistente ou de outro usuário"}}
+ALREADY_RECURRING: Responses = {
+    409: {"description": "`recurrence` pedida para um lançamento que já tem recorrência"}
+}
 
 
 @router.get("", summary="Lista os lançamentos do próprio usuário")
@@ -99,8 +102,8 @@ async def read_transaction(
 
 @router.patch(
     "/{transaction_id}",
-    summary="Atualiza um lançamento do próprio usuário",
-    responses=NOT_FOUND | BAD_CATEGORY,
+    summary="Atualiza um lançamento do próprio usuário; com `recurrence`, torna-o recorrente",
+    responses=NOT_FOUND | BAD_CATEGORY | ALREADY_RECURRING,
 )
 async def update_transaction(
     transaction_id: UUID,

@@ -200,7 +200,7 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | GET | `/transactions` | Lista os lançamentos, com filtro e paginação | autenticado |
 | POST | `/transactions` | Registra uma receita ou despesa; com `recurrence`, repete todo mês | autenticado |
 | GET | `/transactions/{id}` | Detalha um lançamento próprio | autenticado |
-| PATCH | `/transactions/{id}` | Atualiza um lançamento próprio | autenticado |
+| PATCH | `/transactions/{id}` | Atualiza um lançamento próprio; com `recurrence`, torna-o recorrente | autenticado |
 | DELETE | `/transactions/{id}` | Exclui um lançamento próprio | autenticado |
 | GET | `/recurring-transactions` | Lista as recorrências próprias (`?kind=`), pelo dia do mês | autenticado |
 | POST | `/recurring-transactions` | Cria uma recorrência sem lançar nada agora | autenticado |
@@ -257,8 +257,8 @@ log. O relatório nunca cai por causa da marca.
 
 ### Receitas e despesas recorrentes
 
-Marcar um lançamento como recorrente (`POST /transactions` com `"recurrence": {"day_of_month": 5}`)
-cria, no mesmo commit, uma regra que registra o lançamento sozinha todo mês, naquele dia. O que é
+Marcar um lançamento como recorrente (`"recurrence": {"day_of_month": 5}` no `POST /transactions`,
+ou no `PATCH` de um lançamento avulso) cria, no mesmo commit, uma regra que registra o lançamento sozinha todo mês, naquele dia. O que é
 gravado é lançamento comum — extrato, saldo e PDF não sabem da diferença —, apontando para a regra
 por `recurring_transaction_id`. Quem grava é um agendador dentro da própria API: uma rodada na subida
 e outra a cada 15 minutos (`RECURRING_SCHEDULER_*`), seguro com várias réplicas.

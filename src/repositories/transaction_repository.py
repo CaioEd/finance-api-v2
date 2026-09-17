@@ -99,15 +99,24 @@ class TransactionRepository:
         )
         return int((await self._session.execute(statement)).scalar_one())
 
-    async def get_owned(self, transaction_id: UUID, user_id: UUID) -> Transaction | None:
+    async def get_owned(
+        self, transaction_id: UUID, user_id: UUID, *, lock: bool = False
+    ) -> Transaction | None:
         """Devolve `None` para lançamento de terceiro — que a borda traduz em 404.
 
         Não é `session.get`: aquele traria a linha de qualquer dono, e o escopo
         passaria a depender de quem chamou lembrar de conferir.
+
+        `lock=True` trava a linha até o commit — ver `TransactionService.update`.
+        `of=Transaction`, para o JOIN não travar junto a categoria, que é de todos
+        no caso das globais.
         """
-        result = await self._session.scalars(
-            _with_category().where(Transaction.id == transaction_id, Transaction.user_id == user_id)
+        statement = _with_category().where(
+            Transaction.id == transaction_id, Transaction.user_id == user_id
         )
+        if lock:
+            statement = statement.with_for_update(of=Transaction)
+        result = await self._session.scalars(statement)
         return result.first()
 
     def add(self, transaction: Transaction) -> None:

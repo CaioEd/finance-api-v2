@@ -10,7 +10,7 @@ agendador, `recorrencias.md`.
 
 | Tipo | O que cobre | Onde | Testes | Postgres |
 |---|---|---|---|---|
-| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso. Inclui o calendário das recorrências e o laço do agendador | `tests/unit/` | 319 | não |
+| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso. Inclui o calendário das recorrências e o laço do agendador | `tests/unit/` | 325 | não |
 | **Matriz de autorização** | **quem** alcança cada rota: anônimo, autenticado e admin × rota pública, protegida e de admin | `tests/api/test_authorization_matrix.py` | 126 | não |
 | **Matriz de CRUD** | **o que** cada rota faz: criar → ler → listar → atualizar → excluir, os 404/422 e o PATCH parcial | `tests/api/test_crud_contract.py` | 76 | não |
 | **Tradução do SQLite** | o agrupamento mensal do saldo, única consulta que depende de uma função traduzida à mão | `tests/api/test_balance.py` | 4 | não |
@@ -18,12 +18,12 @@ agendador, `recorrencias.md`.
 | **Sessões e tokens** | quanto dura cada token e o que encerra cada sessão: sair de todos os dispositivos, desativação, expiração | `tests/api/test_sessions.py` | 14 | não |
 | **Painel de administração** | o contrato de `/admin/users` que a tela do front consome: a lista traz a própria conta do admin e filtra com `total` coerente, o papel escolhido vale na hora, o `409` diz **qual** campo colidiu, a edição não aceita senha, a exclusão leva junto lançamentos, categorias e sessões, e a própria conta não se edita nem se exclui por ali | `tests/api/test_admin_users.py` | 29 | não |
 | **Limite de tentativas** | o `429` do login com `Retry-After`: por IP, por e-mail entre IPs, `X-Forwarded-For` forjado e o cabeçalho exposto no CORS (ver `rate-limit.md`) | `tests/api/test_login_rate_limit.py` | 11 | não |
-| **Recorrências** | do formulário ao lançamento que aparece sozinho: `POST /transactions` com `recurrence` num commit só, o agendador registrando cada mês vencido (dia 31 em fevereiro, idempotente, em lotes, todos os donos), pausa, exclusão que preserva o que foi lançado, o saldo somando o gerado (ver `recorrencias.md`) | `tests/api/test_recurring_transactions.py` | 13 | não |
+| **Recorrências** | do formulário ao lançamento que aparece sozinho: `recurrence` num commit só no `POST /transactions` e no `PATCH` de um avulso (com `409` para quem já é recorrente), o agendador registrando cada mês vencido (dia 31 em fevereiro, idempotente, em lotes, todos os donos), pausa, exclusão que preserva o que foi lançado, o saldo somando o gerado (ver `recorrencias.md`) | `tests/api/test_recurring_transactions.py` | 18 | não |
 | **Operacionais** | liveness e readiness | `tests/api/test_health.py` | 2 | não |
-| **Contrato de domínio** | o que só aquele recurso faz: rotação de refresh, categoria do sistema vs. do usuário, o saldo agregado e o seu escopo por dono, e a trava do agendador de recorrências entre duas conexões | `tests/integration/test_auth.py`, `test_users.py`, `test_categories.py`, `test_admin_users.py`, `test_balance.py`, `test_recurring_transactions.py` | 114 | sim |
+| **Contrato de domínio** | o que só aquele recurso faz: rotação de refresh, categoria do sistema vs. do usuário, o saldo agregado e o seu escopo por dono, e a trava do agendador de recorrências entre duas conexões | `tests/integration/test_auth.py`, `test_users.py`, `test_categories.py`, `test_admin_users.py`, `test_balance.py`, `test_recurring_transactions.py` | 115 | sim |
 | **Infraestrutura** | migrations, envelope de erro, health contra o banco real e o `seed-dev` | `tests/integration/test_health.py`, `test_error_envelope.py`, `test_dev_seed.py` | 14 | sim |
 
-Os dez primeiros tipos — 606 dos 734 testes — rodam **sem Docker e sem banco nenhum**. Só o que
+Os dez primeiros tipos — 617 dos 746 testes — rodam **sem Docker e sem banco nenhum**. Só o que
 depende do Postgres de verdade (migrations, dado semeado por migration, `NUMERIC`, índice parcial,
 o `date_trunc` do saldo mensal e o `FOR UPDATE ... SKIP LOCKED` do agendador) sobe o serviço
 `db-test`.
@@ -39,7 +39,7 @@ criado e destruído a cada teste. Ela existe para que o contrato HTTP — rota, 
 erro, forma da resposta, escopo por dono — possa ser verificado numa máquina sem Docker.
 
 ```bash
-make test-api                                 # os 287 testes, ~20 s, sem Docker nem banco
+make test-api                                 # os 292 testes, ~20 s, sem Docker nem banco
 make test-api k=categorias                    # um recorte; vai direto para o -k do pytest
 .venv/bin/pytest tests/api                    # o mesmo, chamando o pytest na mão
 ```
@@ -78,8 +78,8 @@ O banco de teste sobe sozinho. Não existe passo de preparação em nenhum alvo.
 ## Rodar só um tipo
 
 ```bash
-make test-unit                                      # os 319 unitários, ~3 s, sem Docker
-make test-api                                       # os 287 de API, ~20 s, sem Docker
+make test-unit                                      # os 325 unitários, ~3 s, sem Docker
+make test-api                                       # os 292 de API, ~20 s, sem Docker
 make test-integration                               # tudo que exige Postgres
 
 .venv/bin/pytest -m "not integration"               # unitários + API: tudo que dispensa banco

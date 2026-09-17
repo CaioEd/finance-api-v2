@@ -25,7 +25,11 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from core.clock import Clock
-from core.errors import InvalidCategoryError, TransactionNotFoundError
+from core.errors import (
+    InvalidCategoryError,
+    TransactionAlreadyRecurringError,
+    TransactionNotFoundError,
+)
 from models.category import Category, CategoryKind
 from models.recurring_transaction import RecurringTransaction
 from models.transaction import FK_CATEGORY, Transaction
@@ -105,6 +109,7 @@ class FakeTransactionStore:
         self.added: list[Transaction] = []
         self.deleted: list[Transaction] = []
         self.last_query: dict[str, Any] | None = None
+        self.locked_reads = 0
 
     async def list_transactions(
         self, user_id: UUID, *, filters: TransactionFilters, limit: int, offset: int
@@ -120,8 +125,12 @@ class FakeTransactionStore:
     async def count_transactions(self, user_id: UUID, *, filters: TransactionFilters) -> int:
         return len(self._owned(user_id))
 
-    async def get_owned(self, transaction_id: UUID, user_id: UUID) -> Transaction | None:
+    async def get_owned(
+        self, transaction_id: UUID, user_id: UUID, *, lock: bool = False
+    ) -> Transaction | None:
         """O duble impõe o mesmo escopo do repositório: nada de outro dono sai daqui."""
+        if lock:
+            self.locked_reads += 1
         return next(
             (
                 transaction
@@ -632,6 +641,145 @@ async def test_update_of_another_users_transaction_is_not_found(user: User) -> N
 
     with pytest.raises(TransactionNotFoundError):
         await service.update(user, de_outro.id, TransactionUpdateIn(amount=Decimal("1.00")))
+
+
+# ------------------------------------------------------- UPDATE com recorrência
+
+
+async def test_update_can_turn_an_existing_transaction_into_a_recurrence(user: User) -> None:
+    """A despesa lançada avulsa em 3/9 vira "todo dia 5": a regra começa em outubro.
+
+    Mesma regra da criação — o lançamento vale pelo mês dele. E a linha é lida
+    travada, para dois envios simultâneos não criarem duas regras.
+    """
+    category = make_category(user_id=user.id, name="Streaming")
+    transaction = make_transaction(
+        user_id=user.id, category=category, amount="39.90", occurred_on=date(2026, 9, 3)
+    )
+    store, work, sink = FakeTransactionStore([transaction]), FakeUnitOfWork(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        work,
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    updated = await service.update(
+        user, transaction.id, TransactionUpdateIn(recurrence=RecurrenceIn(day_of_month=5))
+    )
+
+    [rule] = sink.added
+    assert rule.next_occurrence_on == date(2026, 10, 5)
+    assert (rule.amount, rule.category_id, rule.day_of_month) == (
+        Decimal("39.90"),
+        category.id,
+        5,
+    )
+    assert updated.recurring_transaction_id == rule.id
+    assert updated.occurred_on == date(2026, 9, 3), "a recorrência não mexe no lançamento"
+    assert store.locked_reads == 1
+    assert work.commits == 1
+
+
+async def test_the_rule_copies_the_transaction_as_edited_in_the_same_request(user: User) -> None:
+    """Valor, categoria e data mudam junto com o pedido: a regra nasce do lançamento novo."""
+    antiga = make_category(user_id=user.id, name="Mercado")
+    streaming = make_category(user_id=user.id, name="Streaming")
+    transaction = make_transaction(
+        user_id=user.id, category=antiga, amount="10.00", occurred_on=date(2026, 9, 3)
+    )
+    sink = FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore([transaction]),
+        FakeCategoryLookup([antiga, streaming]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    await service.update(
+        user,
+        transaction.id,
+        TransactionUpdateIn(
+            amount=Decimal("55.90"),
+            category_id=streaming.id,
+            occurred_on=date(2026, 11, 20),
+            description="Netflix",
+            recurrence=RecurrenceIn(day_of_month=20),
+        ),
+    )
+
+    [rule] = sink.added
+    assert (rule.amount, rule.category, rule.description) == (
+        Decimal("55.90"),
+        streaming,
+        "Netflix",
+    )
+    assert rule.next_occurrence_on == date(2026, 12, 20)
+
+
+async def test_making_an_old_transaction_recurrent_registers_what_is_due_today(
+    user: User,
+) -> None:
+    category = make_category(user_id=user.id)
+    transaction = make_transaction(
+        user_id=user.id, category=category, occurred_on=date(2026, 8, 17)
+    )
+    store, sink = FakeTransactionStore([transaction]), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    await service.update(
+        user, transaction.id, TransactionUpdateIn(recurrence=RecurrenceIn(day_of_month=17))
+    )
+
+    assert [t.occurred_on for t in store.added] == [date(2026, 9, 17)]
+    assert store.added[0].recurring_transaction_id == sink.added[0].id
+
+
+async def test_a_transaction_that_already_recurs_refuses_a_second_rule(user: User) -> None:
+    """Uma segunda regra lançaria o mesmo gasto duas vezes por mês: 409, e nada muda."""
+    category = make_category(user_id=user.id)
+    transaction = make_transaction(user_id=user.id, category=category, amount="10.00")
+    transaction.recurring_transaction_id = uuid4()
+    work, sink = FakeUnitOfWork(), FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore([transaction]), FakeCategoryLookup([category]), work, sink=sink
+    )
+
+    with pytest.raises(TransactionAlreadyRecurringError):
+        await service.update(
+            user,
+            transaction.id,
+            TransactionUpdateIn(amount=Decimal("99.00"), recurrence=RecurrenceIn(day_of_month=5)),
+        )
+
+    assert sink.added == []
+    assert transaction.amount == Decimal("10.00"), "a recusa vem antes de qualquer mudança"
+    assert work.commits == 0
+
+
+async def test_a_plain_update_neither_locks_nor_touches_the_recurrence(user: User) -> None:
+    category = make_category(user_id=user.id)
+    transaction = make_transaction(user_id=user.id, category=category)
+    rule_id = uuid4()
+    transaction.recurring_transaction_id = rule_id
+    store, sink = FakeTransactionStore([transaction]), FakeRecurrenceSink()
+    service = build_service(store, FakeCategoryLookup([category]), FakeUnitOfWork(), sink=sink)
+
+    updated = await service.update(
+        user, transaction.id, TransactionUpdateIn(amount=Decimal("1.00"), recurrence=None)
+    )
+
+    assert updated.recurring_transaction_id == rule_id
+    assert sink.added == []
+    assert store.locked_reads == 0
 
 
 # ------------------------------------------------------------------- DELETE

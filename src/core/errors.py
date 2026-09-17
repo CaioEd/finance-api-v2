@@ -164,6 +164,14 @@ class TransactionNotFoundError(NotFoundError):
     message = "Lançamento não encontrado."
 
 
+class TransactionAlreadyRecurringError(ConflictError):
+    code = "transaction_already_recurring"
+    message = "Este lançamento já faz parte de uma recorrência."
+    # 409 e não um "sucesso" silencioso: a regra que já existe se edita em
+    # /recurring-transactions, e criar uma segunda lançaria o mesmo gasto duas
+    # vezes por mês.
+
+
 class RecurringTransactionNotFoundError(NotFoundError):
     code = "recurring_transaction_not_found"
     message = "Recorrência não encontrada."

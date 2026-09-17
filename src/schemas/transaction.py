@@ -10,9 +10,10 @@ Duas decisões de contrato que vêm do desenho:
   `models.transaction`); aceitá-lo no corpo seria abrir caminho para
   contradizer a categoria escolhida.
 
-A recorrência entra aqui por um campo só, e só na criação: `recurrence` pede que
-o lançamento se repita todo mês. Editar, pausar e excluir a regra é assunto de
-`/recurring-transactions` (`schemas.recurring_transaction`).
+A recorrência entra aqui por um campo só, `recurrence`, na criação e na edição:
+ele pede que o lançamento passe a se repetir todo mês. Editar, pausar e excluir
+a regra que já existe é assunto de `/recurring-transactions`
+(`schemas.recurring_transaction`).
 """
 
 from __future__ import annotations
@@ -131,6 +132,13 @@ class TransactionUpdateIn(PatchIn):
     category_id: UUID | None = None
     occurred_on: date | None = None
     description: Description | None = None
+    recurrence: RecurrenceIn | None = None
+    """Presente, torna recorrente um lançamento que ainda não é — com a mesma regra da criação.
+
+    Nulo ou ausente é "não mexa", como todo campo de PATCH: não há como desfazer a
+    recorrência por aqui. Pausar ou excluir a regra é em `/recurring-transactions`,
+    e pedir recorrência para um lançamento que já tem uma é `409`.
+    """
 
 
 class TransactionPageOut(BaseModel):

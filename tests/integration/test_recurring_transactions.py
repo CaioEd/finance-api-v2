@@ -150,6 +150,36 @@ async def test_deleting_a_rule_unlinks_the_transactions_it_created(
     assert stored.recurring_transaction_id is None
 
 
+async def test_an_existing_transaction_becomes_recurring_against_postgres(
+    client: AsyncClient,
+) -> None:
+    """O `UPDATE` do lançamento precisa sair depois do `INSERT` da regra.
+
+    O Postgres confere a FK a cada instrução: se o flush mandasse o `UPDATE`
+    primeiro, `recurring_transaction_id` apontaria para uma regra que ainda não
+    existe. Quem ordena as duas é `RecurringTransaction.occurrences`.
+    """
+    ana = await register_user(client)
+    categoria = await a_category(client, ana)
+    lancamento = await client.post(
+        "/api/v1/transactions",
+        headers=ana.auth,
+        json={"amount": "39.90", "category_id": categoria, "occurred_on": "2099-01-05"},
+    )
+    lancamento.raise_for_status()
+    url = f"/api/v1/transactions/{lancamento.json()['id']}"
+
+    response = await client.patch(url, headers=ana.auth, json={"recurrence": {"day_of_month": 5}})
+    repetido = await client.patch(url, headers=ana.auth, json={"recurrence": {"day_of_month": 5}})
+
+    assert response.status_code == 200, response.text
+    rule_id = response.json()["recurring_transaction_id"]
+    regra = await client.get(f"{RECURRING}/{rule_id}", headers=ana.auth)
+    assert regra.json()["next_occurrence_on"] == "2099-02-05"
+    assert repetido.status_code == 409
+    assert repetido.json()["error"]["code"] == "transaction_already_recurring"
+
+
 async def test_lock_due_filters_active_and_due_rules_in_date_order(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
