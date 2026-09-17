@@ -22,6 +22,7 @@ from dependencies.repositories import (
     get_admin_user_repository,
     get_balance_repository,
     get_category_repository,
+    get_recurring_transaction_repository,
     get_refresh_token_repository,
     get_transaction_repository,
     get_user_repository,
@@ -36,6 +37,7 @@ from dependencies.state import (
 from repositories.admin_user_repository import AdminUserRepository
 from repositories.balance_repository import BalanceRepository
 from repositories.category_repository import CategoryRepository
+from repositories.recurring_transaction_repository import RecurringTransactionRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.transaction_repository import TransactionRepository
 from repositories.user_repository import UserRepository
@@ -43,6 +45,7 @@ from services.admin_user_service import AdminUserService
 from services.auth_service import AuthService
 from services.balance_service import BalanceService
 from services.category_service import CategoryService
+from services.recurring_transaction_service import RecurringTransactionService
 from services.report_service import ReportService
 from services.transaction_service import TransactionService
 from services.user_service import UserService
@@ -90,16 +93,36 @@ def get_transaction_service(
     session: AsyncSession = Depends(get_session),
     transactions: TransactionRepository = Depends(get_transaction_repository),
     categories: CategoryRepository = Depends(get_category_repository),
+    recurrences: RecurringTransactionRepository = Depends(get_recurring_transaction_repository),
     clock: Clock = Depends(get_clock),
 ) -> TransactionService:
     """A sessão entra como `UnitOfWork`, e a categoria como `CategoryLookup`.
 
     O serviço só enxerga de cada uma o que declarou precisar; o repositório de
     categorias chega inteiro, mas o Protocol estreito impede que lançar vire um
-    caminho para alterar categoria.
+    caminho para alterar categoria. O de recorrências, idem: lançar só cria a
+    regra, nunca a edita.
     """
     return TransactionService(
         unit_of_work=session,
+        transactions=transactions,
+        categories=categories,
+        recurrences=recurrences,
+        clock=clock,
+    )
+
+
+def get_recurring_transaction_service(
+    session: AsyncSession = Depends(get_session),
+    recurrences: RecurringTransactionRepository = Depends(get_recurring_transaction_repository),
+    transactions: TransactionRepository = Depends(get_transaction_repository),
+    categories: CategoryRepository = Depends(get_category_repository),
+    clock: Clock = Depends(get_clock),
+) -> RecurringTransactionService:
+    """Os lançamentos entram como `TransactionSink`: a recorrência só acrescenta os que venceram."""
+    return RecurringTransactionService(
+        unit_of_work=session,
+        recurrences=recurrences,
         transactions=transactions,
         categories=categories,
         clock=clock,

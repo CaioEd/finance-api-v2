@@ -27,12 +27,14 @@ from sqlalchemy.exc import IntegrityError
 from core.clock import Clock
 from core.errors import InvalidCategoryError, TransactionNotFoundError
 from models.category import Category, CategoryKind
+from models.recurring_transaction import RecurringTransaction
 from models.transaction import FK_CATEGORY, Transaction
 from models.user import Role, User
 from repositories.transaction_repository import TransactionFilters
-from schemas.transaction import TransactionCreateIn, TransactionUpdateIn
+from schemas.transaction import RecurrenceIn, TransactionCreateIn, TransactionUpdateIn
 from services.transaction_service import (
     CategoryLookup,
+    RecurrenceSink,
     TransactionService,
     TransactionStore,
     UnitOfWork,
@@ -159,6 +161,16 @@ class FakeCategoryLookup:
         )
 
 
+class FakeRecurrenceSink:
+    """Implementa `RecurrenceSink`: guarda as recorrências que o serviço criou."""
+
+    def __init__(self) -> None:
+        self.added: list[RecurringTransaction] = []
+
+    def add(self, rule: RecurringTransaction) -> None:
+        self.added.append(rule)
+
+
 class FakeUnitOfWork:
     """Transação de mentira: conta os commits e sabe falhar sob comando."""
 
@@ -181,15 +193,18 @@ def build_service(
     lookup: FakeCategoryLookup,
     unit_of_work: FakeUnitOfWork,
     clock: Clock | None = None,
+    sink: FakeRecurrenceSink | None = None,
 ) -> TransactionService:
     # As anotações forçam a checagem de que os dubles satisfazem os Protocol.
     transactions: TransactionStore = store
     categories: CategoryLookup = lookup
     work: UnitOfWork = unit_of_work
+    recurrences: RecurrenceSink = sink or FakeRecurrenceSink()
     return TransactionService(
         unit_of_work=work,
         transactions=transactions,
         categories=categories,
+        recurrences=recurrences,
         clock=clock or clock_at(datetime(2026, 9, 5, 12, 0, tzinfo=UTC)),
     )
 
@@ -329,6 +344,167 @@ async def test_create_rolls_back_when_the_category_vanishes_mid_flight(user: Use
         )
 
     assert work.rollbacks == 1
+
+
+# ------------------------------------------------------- CREATE com recorrência
+
+
+async def test_a_plain_create_starts_no_recurrence(user: User) -> None:
+    category = make_category(user_id=user.id)
+    sink = FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore(), FakeCategoryLookup([category]), FakeUnitOfWork(), sink=sink
+    )
+
+    created = await service.create(
+        user, TransactionCreateIn(amount=Decimal("10.00"), category_id=category.id)
+    )
+
+    assert sink.added == []
+    assert created.recurring_transaction_id is None
+
+
+async def test_create_with_recurrence_starts_the_rule_in_the_next_month(user: User) -> None:
+    """O lançamento criado é o do mês dele: a Netflix de 3/9 com "todo dia 5" não repete em 5/9.
+
+    Regra e lançamento saem no mesmo commit, com o lançamento já apontando para
+    a regra — não existe o lançamento salvo com a recorrência perdida.
+    """
+    category = make_category(user_id=user.id, name="Streaming")
+    store, work, sink = FakeTransactionStore(), FakeUnitOfWork(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        work,
+        clock=clock_at(datetime(2026, 9, 3, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    created = await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("39.90"),
+            category_id=category.id,
+            occurred_on=date(2026, 9, 3),
+            description="Netflix",
+            recurrence=RecurrenceIn(day_of_month=5),
+        ),
+    )
+
+    [rule] = sink.added
+    assert rule.next_occurrence_on == date(2026, 10, 5)
+    assert (rule.user_id, rule.category_id, rule.amount, rule.description) == (
+        user.id,
+        category.id,
+        Decimal("39.90"),
+        "Netflix",
+    )
+    assert rule.day_of_month == 5
+    assert rule.is_active
+    assert created.recurring_transaction_id == rule.id
+    assert store.added == [created], "nada venceu: só o lançamento pedido entra"
+    assert work.commits == 1
+
+
+async def test_a_future_transaction_starts_its_recurrence_after_its_own_month(user: User) -> None:
+    category = make_category(user_id=user.id)
+    sink = FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore(), FakeCategoryLookup([category]), FakeUnitOfWork(), sink=sink
+    )
+
+    await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("100.00"),
+            category_id=category.id,
+            occurred_on=date(2026, 12, 20),
+            recurrence=RecurrenceIn(day_of_month=20),
+        ),
+    )
+
+    assert sink.added[0].next_occurrence_on == date(2027, 1, 20)
+
+
+async def test_a_retroactive_transaction_does_not_backfill_the_months_in_between(
+    user: User,
+) -> None:
+    """Julho lançado em setembro, "todo dia 10": agosto e 10/9 não aparecem de uma vez.
+
+    Recorrência não lança o passado — a regra conta a partir de hoje.
+    """
+    category = make_category(user_id=user.id)
+    store, sink = FakeTransactionStore(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("80.00"),
+            category_id=category.id,
+            occurred_on=date(2026, 7, 10),
+            recurrence=RecurrenceIn(day_of_month=10),
+        ),
+    )
+
+    assert sink.added[0].next_occurrence_on == date(2026, 10, 10)
+    assert len(store.added) == 1
+
+
+async def test_a_recurrence_whose_first_date_is_today_registers_it_now(user: User) -> None:
+    """Agosto lançado hoje, 17/9, "todo dia 17": setembro já venceu e entra na mesma resposta."""
+    category = make_category(user_id=user.id)
+    store, sink = FakeTransactionStore(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    created = await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("80.00"),
+            category_id=category.id,
+            occurred_on=date(2026, 8, 17),
+            recurrence=RecurrenceIn(day_of_month=17),
+        ),
+    )
+
+    [rule] = sink.added
+    assert [t.occurred_on for t in store.added] == [date(2026, 8, 17), date(2026, 9, 17)]
+    assert {t.recurring_transaction_id for t in store.added} == {rule.id}
+    assert store.added[0] is created
+    assert rule.next_occurrence_on == date(2026, 10, 17)
+
+
+async def test_create_with_recurrence_refuses_an_invisible_category_before_creating_the_rule(
+    user: User,
+) -> None:
+    alheia = make_category(user_id=uuid4(), name="Barco")
+    sink, work = FakeRecurrenceSink(), FakeUnitOfWork()
+    service = build_service(FakeTransactionStore(), FakeCategoryLookup([alheia]), work, sink=sink)
+
+    with pytest.raises(InvalidCategoryError):
+        await service.create(
+            user,
+            TransactionCreateIn(
+                amount=Decimal("10.00"),
+                category_id=alheia.id,
+                recurrence=RecurrenceIn(day_of_month=5),
+            ),
+        )
+
+    assert sink.added == []
+    assert work.commits == 0
 
 
 # --------------------------------------------------------------------- GET

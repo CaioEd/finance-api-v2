@@ -103,6 +103,19 @@ class Transaction(TimestampMixin, Base):
         String(DESCRIPTION_MAX_LENGTH), nullable=False, server_default=""
     )
 
+    recurring_transaction_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        # `SET NULL`: excluir a recorrência para os próximos meses, não apaga o
+        # que ela já lançou. O dinheiro daqueles meses entrou ou saiu de fato.
+        ForeignKey("recurring_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    """A recorrência que gerou este lançamento, ou `None` se ele foi lançado à mão.
+
+    Não é campo de entrada nem de edição: só o serviço de recorrências o
+    preenche. Editar o lançamento gerado não mexe na regra, e vice-versa.
+    """
+
     __table_args__ = (
         AMOUNT_CHECK,
         # Toda listagem é "os meus, do mais recente para o mais antigo", e a
@@ -110,6 +123,8 @@ class Transaction(TimestampMixin, Base):
         Index("ix_transactions_user_id_occurred_on", "user_id", "occurred_on"),
         # Sem este, a checagem da FK ao excluir uma categoria varre a tabela.
         Index("ix_transactions_category_id", "category_id"),
+        # Sem este, o `SET NULL` ao excluir uma recorrência varre a tabela.
+        Index("ix_transactions_recurring_transaction_id", "recurring_transaction_id"),
     )
 
     @property

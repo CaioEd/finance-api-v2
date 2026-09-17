@@ -9,6 +9,10 @@ Duas decisões de contrato que vêm do desenho:
 - **`kind` não é campo de entrada.** O tipo do lançamento é o da categoria (ver
   `models.transaction`); aceitá-lo no corpo seria abrir caminho para
   contradizer a categoria escolhida.
+
+A recorrência entra aqui por um campo só, e só na criação: `recurrence` pede que
+o lançamento se repita todo mês. Editar, pausar e excluir a regra é assunto de
+`/recurring-transactions` (`schemas.recurring_transaction`).
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer
 
 from models.category import CategoryKind
+from models.recurring_transaction import DAY_OF_MONTH_MAX, DAY_OF_MONTH_MIN
 from models.transaction import (
     AMOUNT_DECIMAL_PLACES,
     AMOUNT_MAX_DIGITS,
@@ -43,6 +48,13 @@ type Description = Annotated[
     str,
     StringConstraints(strip_whitespace=True, max_length=DESCRIPTION_MAX_LENGTH),
 ]
+
+type DayOfMonth = Annotated[int, Field(ge=DAY_OF_MONTH_MIN, le=DAY_OF_MONTH_MAX)]
+"""Dia do mês de uma recorrência, de 1 a 31 — o mesmo CHECK da coluna.
+
+31 é aceito de propósito: "todo dia 31" é o último dia de todo mês, e cai em 30
+ou em 28 quando o mês é mais curto (ver `models.recurring_transaction`).
+"""
 
 
 class TransactionCategoryOut(BaseModel):
@@ -72,11 +84,22 @@ class TransactionOut(BaseModel):
     occurred_on: date
     description: str
     category: TransactionCategoryOut
+    recurring_transaction_id: UUID | None = None
+    """A recorrência que registrou este lançamento — ou que ele criou —, `None` no avulso."""
+
     created_at: datetime
 
     @field_serializer("amount")
     def _amount_as_string(self, amount: Decimal) -> str:
         return f"{amount:.{AMOUNT_DECIMAL_PLACES}f}"
+
+
+class RecurrenceIn(BaseModel):
+    """O pedido de repetir, todo mês, o lançamento que está sendo criado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    day_of_month: DayOfMonth
 
 
 class TransactionCreateIn(BaseModel):
@@ -88,6 +111,13 @@ class TransactionCreateIn(BaseModel):
     """Ausente é "hoje" — resolvido pelo `Clock`, no fuso da aplicação."""
 
     description: Description = ""
+    recurrence: RecurrenceIn | None = None
+    """Presente, o lançamento vira o primeiro de uma recorrência mensal.
+
+    Ele vale pelo mês dele, e a recorrência começa no mês seguinte — ver
+    `services.transaction_service.TransactionService.create`. Lançamento e regra
+    nascem no mesmo commit: não existe o lançamento salvo com a regra perdida.
+    """
 
 
 class TransactionUpdateIn(PatchIn):

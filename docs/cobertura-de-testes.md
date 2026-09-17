@@ -1,7 +1,8 @@
 # Cobertura de testes
 
-Medida em **2026-09-15** com `make coverage`, sobre o estado que este commit entrega — a fase 5
-concluída, mais duas frentes de autenticação. O encerramento de sessões: sair de todos os
+Medida em **2026-09-17** com `make coverage`, sobre o estado que este commit entrega — a fase 5
+concluída, as receitas e despesas recorrentes (`docs/recorrencias.md`), mais duas frentes de
+autenticação. O encerramento de sessões: sair de todos os
 dispositivos (`POST /users/me/logout-all`), a desativação pelo admin revogando os refresh tokens, e
 `tests/api/test_sessions.py` fixando quanto dura cada token e o que encerra cada sessão. E o limite
 de tentativas no login (`core/rate_limit.py`, com o slowapi confinado a ele, e a regra em
@@ -14,24 +15,25 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **97%** — 2156 linhas executáveis, 68 sem cobertura |
-| Suíte | 595 testes: 239 unitários, 235 de API, 121 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 94% — os 474 testes que rodam sem Docker |
-| Só os unitários | 79% — número de import, não de regra; ver abaixo |
+| **Cobertura total** | **97%** — 2552 linhas executáveis, 69 sem cobertura |
+| Suíte | 734 testes: 319 unitários, 287 de API, 128 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 95% — os 606 testes que rodam sem Docker |
+| Só os unitários | 81% — número de import, não de regra; ver abaixo |
 
-Os 79% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
+Os 81% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
 nova coberta: o teste do aviso de subida em produção (`tests/unit/test_rate_limit.py`) chama
 `create_app`, e montar a aplicação importa todas as rotas, schemas e repositórios — as linhas de
 definição (decorador, classe, assinatura) passam a contar como executadas, embora nenhuma rota rode.
 O que os unitários de fato exercitam continua sendo relógio, configuração, criptografia, a regra dos
-serviços, o desenho do PDF e agora o limite de tentativas; rota, repositório e sessão precisam da
+serviços, o desenho do PDF, o limite de tentativas e agora o calendário das recorrências e o laço do
+agendador; rota, repositório e sessão precisam da
 aplicação de pé, e é a suíte de API que os alcança, daí os 94% sem nenhum banco externo. Os três
 pontos que faltam para o total são o que só o Postgres de verdade exercita: migrations, as
 categorias que a migration semeia, o agrupamento mensal do saldo e a tradução de constraint pelo
 nome. Quem responde pela cobertura é a suíte inteira.
 
 A suíte de API também responde por **quantos endpoints** têm teste, e o número sai no fim de toda
-rodada dela — hoje, 31 de 31. É uma cobertura diferente da de linhas: mede o contrato publicado, não
+rodada dela — hoje, 36 de 36. É uma cobertura diferente da de linhas: mede o contrato publicado, não
 o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 
 > **Ao medir, `concurrency = ["thread", "greenlet"]` não é opcional.** A ponte async do SQLAlchemy
@@ -44,56 +46,65 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 
 | Módulo (`src/`) | Linhas | Cobertura |
 |---|---|---|
-| `api/router.py` | 11 | 100% |
+| `api/router.py` | 12 | 100% |
 | `api/routes/admin_users.py` | 26 | 100% |
 | `api/routes/auth.py` | 23 | 100% |
 | `api/routes/balance.py` | 30 | 100% |
 | `api/routes/categories.py` | 35 | 100% |
 | `api/routes/health.py` | 26 | 92% |
+| `api/routes/recurring_transactions.py` | 34 | 100% |
 | `api/routes/reports.py` | 37 | 100% |
 | `api/routes/transactions.py` | 36 | 100% |
 | `api/routes/users.py` | 28 | 100% |
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 44 | 100% |
-| `core/config.py` | 108 | 97% |
+| `core/config.py` | 112 | 98% |
 | `core/database.py` | 28 | 96% |
-| `core/errors.py` | 120 | 98% |
+| `core/errors.py` | 123 | 98% |
 | `core/pdf.py` | 192 | 100% |
 | `core/rate_limit.py` | 83 | 100% |
+| `core/scheduler.py` | 33 | 100% |
 | `core/security.py` | 72 | 95% |
 | `dependencies/auth.py` | 27 | 100% |
 | `dependencies/database.py` | 9 | 67% |
-| `dependencies/repositories.py` | 22 | 100% |
-| `dependencies/services.py` | 39 | 100% |
+| `dependencies/repositories.py` | 25 | 100% |
+| `dependencies/services.py` | 43 | 100% |
 | `dependencies/state.py` | 24 | 100% |
-| `main.py` | 46 | 100% |
+| `jobs/recurring_transactions.py` | 23 | 100% |
+| `main.py` | 57 | 100% |
 | `models/category.py` | 27 | 93% |
+| `models/recurring_transaction.py` | 36 | 97% |
 | `models/refresh_token.py` | 19 | 95% |
-| `models/transaction.py` | 32 | 97% |
+| `models/transaction.py` | 34 | 97% |
 | `models/user.py` | 30 | 97% |
 | `repositories/admin_user_repository.py` | 43 | 100% |
 | `repositories/balance_repository.py` | 37 | 100% |
-| `repositories/category_repository.py` | 33 | 95% |
+| `repositories/category_repository.py` | 34 | 95% |
+| `repositories/recurring_transaction_repository.py` | 40 | 100% |
 | `repositories/refresh_token_repository.py` | 18 | 100% |
-| `repositories/transaction_repository.py` | 52 | 97% |
+| `repositories/transaction_repository.py` | 54 | 97% |
 | `repositories/user_repository.py` | 27 | 94% |
 | `schemas/auth.py` | 28 | 100% |
 | `schemas/balance.py` | 25 | 100% |
 | `schemas/base.py` | 7 | 100% |
 | `schemas/category.py` | 25 | 100% |
-| `schemas/transaction.py` | 48 | 100% |
+| `schemas/recurring_transaction.py` | 45 | 100% |
+| `schemas/transaction.py` | 58 | 100% |
 | `schemas/user.py` | 57 | 100% |
 | `services/admin_user_service.py` | 65 | 100% |
 | `services/auth_service.py` | 105 | 97% |
 | `services/balance_service.py` | 63 | 100% |
 | `services/category_service.py` | 49 | 100% |
+| `services/recurrence.py` | 25 | 100% |
+| `services/recurring_transaction_service.py` | 104 | 100% |
 | `services/report_service.py` | 102 | 100% |
-| `services/transaction_service.py` | 71 | 100% |
+| `services/transaction_service.py` | 86 | 100% |
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
-32 dos 47 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
-`auth_service`, tratada abaixo. O módulo novo, `core/rate_limit.py`, entra em 100%, e `main.py`
+39 dos 55 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
+`auth_service`, tratada abaixo. Os oito módulos das recorrências entram todos em 100%, menos o
+`__repr__` do model (ver "Não são lacunas"). `core/rate_limit.py` também está em 100%, e `main.py`
 chegou lá junto: o middleware de CORS, que nenhum teste montava, agora é exercitado pelo teste que
 confere o `Retry-After` exposto ao front. Os três módulos da fase 5 seguem em 100%, e nenhum
 repositório ficou abaixo de 94%.
@@ -110,10 +121,10 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `services/auth_service.py:104` | rehash da senha quando o custo do argon2 mudou |
 | `core/security.py:154-155` | access token sem os claims obrigatórios |
 | `core/security.py:66-67` | `verify()` diante de um hash corrompido (`InvalidHashError`) |
-| `core/config.py:148` | `JWT_SECRET_KEY` com menos de 32 caracteres |
-| `core/errors.py:246-247` | handler de exceção não tratada — o `500` genérico |
+| `core/config.py:155` | `JWT_SECRET_KEY` com menos de 32 caracteres |
+| `core/errors.py:252-253` | handler de exceção não tratada — o `500` genérico |
 | `api/routes/health.py:46-47` | readiness quando o banco não responde |
-| `repositories/user_repository.py:55`, `category_repository.py:72`, `transaction_repository.py:134` | o erro genérico para constraint desconhecida |
+| `repositories/user_repository.py:55`, `category_repository.py:74`, `transaction_repository.py:140` | o erro genérico para constraint desconhecida |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
 
 **Três dos quatro caminhos de `auth_service` que abriam esta lista saíram dela** — login e refresh de
@@ -128,6 +139,20 @@ desativada nada passava, mas reativá-la devolvia as sessões antigas — inclus
 motivado a desativação. A linha estava coberta; ninguém tinha afirmado o que acontece com as sessões
 depois. Agora a desativação revoga tudo no mesmo commit, e o teste de reativação reprova se isso
 voltar. `POST /users/me/logout-all` entra sem lacuna própria.
+
+**As recorrências entram sem lacuna de linha**, e a divisão de trabalho vale o registro, porque a
+garantia que mais importa nelas não é uma linha. O calendário — dia 31 em fevereiro, meses perdidos,
+regra pausada — é função pura e está em `tests/unit/test_recurrence.py`; a regra do serviço (início
+no mês seguinte ao lançamento, retomada que não cobra a pausa, troca de dia que não pula nem repete
+mês), com dublês, em `test_recurring_transaction_service.py` e `test_transaction_service.py`; o laço
+em segundo plano e a ligação dele na subida, sem banco, em `test_scheduler.py`; a travessia HTTP,
+com o agendador chamado direto e um relógio parado em 2099, em `tests/api/test_recurring_transactions.py`.
+Só que o SQLite ignora `FOR UPDATE ... SKIP LOCKED`, e é essa cláusula que impede duas réplicas de
+lançarem o mesmo mês duas vezes: `repositories/recurring_transaction_repository.py` estaria em 100%
+com ela apagada. Por isso `tests/integration/test_recurring_transactions.py` trava a regra numa
+conexão e confere que a outra a pula, e roda dois agendadores juntos contra a mesma regra vencida.
+Removida a trava, os dois testes reprovam — o segundo contando 6 lançamentos onde deviam ser 3. Os
+dois comitam dado de verdade, única exceção ao rollback da suíte, e apagam a conta no fim.
 
 **O limite de tentativas entra sem lacuna de linha**, e com a divisão de trabalho de sempre. A regra
 — IP antes do e-mail, e-mail em hash, a tentativa barrada sem banco nem argon2 — está em
@@ -193,8 +218,8 @@ comportamento que ninguém olhou.
 | `models/refresh_token.py:55` (`is_usable_at`) | **nada no código chama esta property** — `AuthService.refresh` checa `revoked_at` e `expires_at` direto |
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
 | `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness |
-| `core/config.py:169` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
-| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:121` | `__repr__`, texto de depuração |
+| `core/config.py:176` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
+| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:136`, `models/recurring_transaction.py:157` | `__repr__`, texto de depuração |
 
 A primeira linha é o relatório de cobertura fazendo o trabalho dele: apontou código morto, não
 teste faltando. Ou passa a ser usada, ou sai. `models.user.is_admin` saiu desta lista sem ninguém

@@ -98,6 +98,13 @@ class Settings(BaseSettings):
     rate_limit_login_email_attempts: PositiveInt = 10
     rate_limit_login_email_window_seconds: PositiveInt = 600
 
+    # --- Recorrências (docs/recorrencias.md) ------------------------------
+    recurring_scheduler_enabled: bool = True
+    """Liga o agendador que registra as recorrências vencidas dentro do processo da API."""
+
+    recurring_scheduler_interval_seconds: PositiveInt = 900
+    """De quanto em quanto tempo ele procura o que venceu. Uma rodada sempre roda na subida."""
+
     # --- Banco -----------------------------------------------------------
     db_echo: bool = False
     db_pool_size: int = 5

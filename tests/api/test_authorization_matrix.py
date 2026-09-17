@@ -191,6 +191,20 @@ def a_transaction_of(client: ApiClient, user: RegisteredUser) -> str:
     return f"/api/v1/transactions/{response.json()['id']}"
 
 
+def a_recurring_transaction_body_of(client: ApiClient, user: RegisteredUser) -> dict[str, Any]:
+    return {"amount": "39.90", "category_id": a_category_id_of(client, user), "day_of_month": 5}
+
+
+def a_recurring_transaction_of(client: ApiClient, user: RegisteredUser) -> str:
+    response = client.post(
+        "/api/v1/recurring-transactions",
+        headers=user.auth,
+        json=a_recurring_transaction_body_of(client, user),
+    )
+    response.raise_for_status()
+    return f"/api/v1/recurring-transactions/{response.json()['id']}"
+
+
 DATE_RANGE_QUERY = "occurred_from=2026-01-01&occurred_to=2026-12-31"
 
 
@@ -243,6 +257,29 @@ PROTECTED_ROUTES = [
         setup=a_transaction_of,
     ),
     ProtectedRoute("DELETE", "/api/v1/transactions/{transaction_id}", setup=a_transaction_of),
+    ProtectedRoute("GET", "/api/v1/recurring-transactions"),
+    ProtectedRoute(
+        "POST",
+        "/api/v1/recurring-transactions",
+        body={"amount": "39.90", "category_id": NOBODY, "day_of_month": 5},
+        body_setup=a_recurring_transaction_body_of,
+    ),
+    ProtectedRoute(
+        "GET",
+        "/api/v1/recurring-transactions/{recurring_transaction_id}",
+        setup=a_recurring_transaction_of,
+    ),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/recurring-transactions/{recurring_transaction_id}",
+        body={"amount": "44.90"},
+        setup=a_recurring_transaction_of,
+    ),
+    ProtectedRoute(
+        "DELETE",
+        "/api/v1/recurring-transactions/{recurring_transaction_id}",
+        setup=a_recurring_transaction_of,
+    ),
     ProtectedRoute("GET", "/api/v1/balance/current"),
     ProtectedRoute("GET", "/api/v1/balance/monthly"),
     ProtectedRoute("GET", "/api/v1/balance/range", setup=a_date_range),

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.errors import CategoryInUseError, CategoryNameTakenError, ConflictError
 from models.category import Category, CategoryKind
+from models.recurring_transaction import FK_RECURRING_CATEGORY
 from models.transaction import FK_CATEGORY
 
 
@@ -66,7 +67,8 @@ def translate_integrity_error(exc: IntegrityError) -> ConflictError:
     detail = str(exc.orig)
     if "uq_categories_" in detail:
         return CategoryNameTakenError()
-    # O outro lado da FK: excluir uma categoria que ainda tem lançamento.
-    if FK_CATEGORY in detail:
+    # O outro lado das FKs: excluir uma categoria que ainda tem lançamento, ou
+    # que alguma recorrência ainda usa.
+    if FK_CATEGORY in detail or FK_RECURRING_CATEGORY in detail:
         return CategoryInUseError()
     return ConflictError()

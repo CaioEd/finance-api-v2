@@ -1,12 +1,12 @@
 # Finance API
 
-API REST de finanças pessoais, multiusuário. Cada pessoa registra receitas e despesas, consulta
-saldos agregados (mês corrente, mês a mês, intervalo de datas) e baixa um PDF com o resumo de um
-período.
+API REST de finanças pessoais, multiusuário. Cada pessoa registra receitas e despesas — avulsas ou
+recorrentes, que se lançam sozinhas todo mês —, consulta saldos agregados (mês corrente, mês a mês,
+intervalo de datas) e baixa um PDF com o resumo de um período.
 
 Hoje funcionam identidade e sessão (registro, login, refresh rotativo, perfil próprio e o CRUD
-administrativo de usuários), as categorias, os lançamentos de receita e despesa, os saldos
-agregados e a exportação em PDF de todos eles.
+administrativo de usuários), as categorias, os lançamentos de receita e despesa com as suas
+recorrências mensais, os saldos agregados e a exportação em PDF de todos eles.
 
 | Fase | Escopo | Situação |
 |---|---|---|
@@ -17,6 +17,7 @@ agregados e a exportação em PDF de todos eles.
 | 4 | Saldos: mês corrente, mês a mês, intervalo | concluída |
 | 5 | Relatório em PDF | concluída |
 | 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários e limite de tentativas no login entregues |
+| — | Receitas e despesas recorrentes, com agendador em segundo plano | concluída |
 
 ## Tech stack e requisitos
 
@@ -136,7 +137,7 @@ Organização **por camada**, com um arquivo por recurso dentro de cada uma. Flu
 
 ```
 src/
-├── main.py                  fábrica create_app(); middlewares e handlers de erro
+├── main.py                  fábrica create_app(); middlewares, handlers de erro, agendador
 ├── cli.py                   comandos operacionais (create-admin)
 │
 ├── api/
@@ -146,6 +147,7 @@ src/
 │       ├── users.py         perfil próprio (/users/me)
 │       ├── categories.py    categorias do sistema e do usuário
 │       ├── transactions.py  lançamentos de receita e despesa
+│       ├── recurring_transactions.py  recorrências mensais: a regra, não o lançamento
 │       ├── balance.py       saldos agregados; só leitura, sem recurso guardado
 │       ├── reports.py      os mesmos recortes em PDF, como anexo para download
 │       ├── admin_users.py   CRUD de usuários, sob require_role(ADMIN)
@@ -163,14 +165,18 @@ src/
 │   ├── clock.py             fonte única de "agora"
 │   ├── pdf.py               desenho do PDF; único módulo que importa reportlab
 │   ├── rate_limit.py        limite de tentativas e IP do cliente; único que importa slowapi
+│   ├── scheduler.py         laço em segundo plano (PeriodicJob), sem saber o que roda
 │   └── errors.py            catálogo de erros + handlers
 │
-└── dependencies/            toda a fiação de Depends, e só ela
-    ├── database.py          get_session
-    ├── state.py             settings, clock, hasher, codec, limitador e IP do cliente
-    ├── auth.py              get_current_user, require_role
-    ├── repositories.py
-    └── services.py
+├── dependencies/            toda a fiação de Depends, e só ela
+│   ├── database.py          get_session
+│   ├── state.py             settings, clock, hasher, codec, limitador e IP do cliente
+│   ├── auth.py              get_current_user, require_role
+│   ├── repositories.py
+│   └── services.py
+│
+└── jobs/                    a mesma fiação fora de requisição, para o agendador
+    └── recurring_transactions.py   registra as recorrências vencidas, em lotes
 ```
 
 Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <access_token>`.
@@ -192,10 +198,15 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | PATCH | `/categories/{id}` | Renomeia ou troca o tipo | dono; global só admin |
 | DELETE | `/categories/{id}` | Exclui a categoria | dono; global só admin |
 | GET | `/transactions` | Lista os lançamentos, com filtro e paginação | autenticado |
-| POST | `/transactions` | Registra uma receita ou despesa | autenticado |
+| POST | `/transactions` | Registra uma receita ou despesa; com `recurrence`, repete todo mês | autenticado |
 | GET | `/transactions/{id}` | Detalha um lançamento próprio | autenticado |
 | PATCH | `/transactions/{id}` | Atualiza um lançamento próprio | autenticado |
 | DELETE | `/transactions/{id}` | Exclui um lançamento próprio | autenticado |
+| GET | `/recurring-transactions` | Lista as recorrências próprias (`?kind=`), pelo dia do mês | autenticado |
+| POST | `/recurring-transactions` | Cria uma recorrência sem lançar nada agora | autenticado |
+| GET | `/recurring-transactions/{id}` | Detalha uma recorrência própria | autenticado |
+| PATCH | `/recurring-transactions/{id}` | Muda valor, categoria, dia; pausa e retoma | autenticado |
+| DELETE | `/recurring-transactions/{id}` | Exclui a regra; o que ela já lançou fica | autenticado |
 | GET | `/balance/current` | Saldo do mês corrente, no fuso da aplicação | autenticado |
 | GET | `/balance/monthly` | Saldo mês a mês (`?from_month=&to_month=`, `YYYY-MM`) | autenticado |
 | GET | `/balance/range` | Saldo de um intervalo (`?occurred_from=&occurred_to=`) | autenticado |
@@ -244,6 +255,18 @@ serviço e não interessa a quem recebe o extrato. Troque a imagem em `assets/` 
 Sem logo, ou com logo ilegível, a faixa sai só com o nome — e no segundo caso um aviso vai para o
 log. O relatório nunca cai por causa da marca.
 
+### Receitas e despesas recorrentes
+
+Marcar um lançamento como recorrente (`POST /transactions` com `"recurrence": {"day_of_month": 5}`)
+cria, no mesmo commit, uma regra que registra o lançamento sozinha todo mês, naquele dia. O que é
+gravado é lançamento comum — extrato, saldo e PDF não sabem da diferença —, apontando para a regra
+por `recurring_transaction_id`. Quem grava é um agendador dentro da própria API: uma rodada na subida
+e outra a cada 15 minutos (`RECURRING_SCHEDULER_*`), seguro com várias réplicas.
+
+O calendário (dia 31 em fevereiro, pausa, troca de dia, meses perdidos com a API fora do ar), o
+contrato das rotas e o funcionamento do agendador estão em
+**[`docs/recorrencias.md`](docs/recorrencias.md)**.
+
 ### Decisões que quebram se você fizer diferente
 
 - **Autenticação se declara no router inteiro**, nunca rota a rota — assim esquecer *fecha* a rota
@@ -290,6 +313,12 @@ log. O relatório nunca cai por causa da marca.
   `ReportService` depende dos serviços de lançamentos e de saldos, e os totais impressos são a soma
   das linhas impressas. Um segundo caminho de consulta é como o PDF e a tela passam a discordar em
   silêncio — o mesmo argumento que faz `net` ser derivado e não coluna.
+- **Recorrência gera lançamento de verdade, e não uma linha calculada na leitura.** Saldo, extrato
+  e PDF continuam somando uma tabela só. O mesmo mês não entra duas vezes porque o agendador trava a
+  regra (`FOR UPDATE ... SKIP LOCKED`) e avança `next_occurrence_on` no mesmo commit do INSERT — não
+  por uma `UNIQUE (regra, data)`, que reprovaria a rodada no dia em que alguém movesse um lançamento
+  gerado para a data de um mês futuro. E recorrência não lança o passado: início retroativo e
+  retomada de pausa contam a partir de hoje.
 - **Relatório tem teto, não paginação.** O arquivo é montado inteiro na memória e baixado de uma
   vez, então recorte com mais de 2000 lançamentos vira `422 report_too_large` dizendo quantos são —
   em vez de duzentas páginas que ninguém lê e um pico de memória que todo mundo sente. A renderização
@@ -336,7 +365,7 @@ para que rota nova apareça como lacuna até ganhar teste:
 
 ```
 ------------------------ cobertura de endpoints da API -------------------------
-31 de 31 endpoints cobertos (100%)
+36 de 36 endpoints cobertos (100%)
 ```
 
 **Só um domínio.** O filtro `k` vai direto para o `-k` do pytest, que casa com o nome do arquivo e

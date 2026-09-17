@@ -14,24 +14,30 @@ Três regras vivem aqui, e só aqui:
    dois: trocar de categoria numa edição troca o tipo junto, por construção.
 3. **"Hoje" vem do `Clock`**, nunca de `date.today()` — é o que torna o default
    de `occurred_on` testável e o prende ao fuso da aplicação.
+
+E uma quarta, que só existe na criação: o lançamento que pede `recurrence`
+**vale pelo mês dele**, e a recorrência começa no mês seguinte — ver `create`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.exc import IntegrityError
 
-from core.clock import Clock
+from core.clock import Clock, shift_month
 from core.errors import InvalidCategoryError, TransactionNotFoundError
 from models.category import Category
+from models.recurring_transaction import RecurringTransaction
 from models.transaction import Transaction
 from models.user import User
 from repositories.transaction_repository import TransactionFilters, translate_integrity_error
 from schemas.transaction import TransactionCreateIn, TransactionUpdateIn
+from services.recurrence import first_occurrence_from, month_of, register_due
 
 
 class TransactionStore(Protocol):
@@ -58,6 +64,15 @@ class CategoryLookup(Protocol):
     """
 
     async def get_visible(self, category_id: UUID, user_id: UUID) -> Category | None: ...
+
+
+class RecurrenceSink(Protocol):
+    """A única coisa que lançar exige de recorrências: acrescentar uma nova.
+
+    Listar, editar e pausar são de `services.recurring_transaction_service`.
+    """
+
+    def add(self, rule: RecurringTransaction) -> None: ...
 
 
 class UnitOfWork(Protocol):
@@ -90,11 +105,13 @@ class TransactionService:
         unit_of_work: UnitOfWork,
         transactions: TransactionStore,
         categories: CategoryLookup,
+        recurrences: RecurrenceSink,
         clock: Clock,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._transactions = transactions
         self._categories = categories
+        self._recurrences = recurrences
         self._clock = clock
 
     async def list_transactions(
@@ -111,17 +128,51 @@ class TransactionService:
 
     async def create(self, user: User, data: TransactionCreateIn) -> Transaction:
         category = await self._visible_category_or_fail(user, data.category_id)
+        today = self._clock.today()
         transaction = Transaction(
             user_id=user.id,
             category_id=category.id,
             category=category,
             amount=data.amount,
-            occurred_on=data.occurred_on or self._clock.today(),
+            occurred_on=data.occurred_on or today,
             description=data.description,
         )
         self._transactions.add(transaction)
+        if data.recurrence is not None:
+            self._start_recurrence(transaction, data.recurrence.day_of_month, today)
         await self._commit()
         return transaction
+
+    def _start_recurrence(self, transaction: Transaction, day_of_month: int, today: date) -> None:
+        """Cria a recorrência que repete `transaction` todo mês, no mesmo commit dele.
+
+        O lançamento que a pediu **é** o do mês dele, então a regra começa no
+        mês seguinte: registrar a Netflix no dia 3 com "todo dia 5" não pode
+        gerar outra Netflix no dia 5 do mesmo mês. E, como toda recorrência,
+        não lança o passado — um lançamento retroativo de julho que pede para
+        se repetir começa a contar de hoje, não registra agosto de uma vez.
+
+        Se a primeira data já for hoje, ela é registrada agora: depois desta
+        resposta, a regra ativa sempre tem a próxima ocorrência no futuro.
+        """
+        start = max(shift_month(month_of(transaction.occurred_on), 1).first_day, today)
+        rule = RecurringTransaction(
+            # O id sai daqui, e não do default da coluna: o lançamento aponta
+            # para a regra antes de qualquer flush.
+            id=uuid4(),
+            user_id=transaction.user_id,
+            category_id=transaction.category_id,
+            category=transaction.category,
+            amount=transaction.amount,
+            description=transaction.description,
+            day_of_month=day_of_month,
+            next_occurrence_on=first_occurrence_from(start, day_of_month),
+            is_active=True,
+        )
+        transaction.recurring_transaction_id = rule.id
+        self._recurrences.add(rule)
+        for occurrence in register_due(rule, today):
+            self._transactions.add(occurrence)
 
     async def update(
         self, user: User, transaction_id: UUID, data: TransactionUpdateIn

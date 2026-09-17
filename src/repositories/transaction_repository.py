@@ -25,6 +25,7 @@ from sqlalchemy.orm import contains_eager
 
 from core.errors import DomainError, InvalidCategoryError, UnprocessableError
 from models.category import Category, CategoryKind
+from models.recurring_transaction import FK_RECURRING_CATEGORY
 from models.transaction import FK_CATEGORY, Transaction
 
 
@@ -119,6 +120,10 @@ class TransactionRepository:
 def translate_integrity_error(exc: IntegrityError) -> DomainError:
     """Traduz a violação da FK de categoria **vista de quem insere o lançamento**.
 
+    Vale para as duas tabelas que prendem categoria — `transactions` e
+    `recurring_transactions` —, porque um lançamento pode nascer junto com a
+    sua recorrência, e a recorrência sozinha passa pela mesma checagem.
+
     O serviço já conferiu que a categoria é visível antes de gravar, então
     chegar aqui significa que ela deixou de existir entre a checagem e o
     INSERT. Quem decide é o banco, porque um SELECT prévio sempre terá essa
@@ -129,6 +134,7 @@ def translate_integrity_error(exc: IntegrityError) -> DomainError:
     significado: lá é a exclusão da categoria esbarrando no lançamento que
     aponta para ela.
     """
-    if FK_CATEGORY in str(exc.orig):
+    detail = str(exc.orig)
+    if FK_CATEGORY in detail or FK_RECURRING_CATEGORY in detail:
         return InvalidCategoryError()
     return UnprocessableError()
