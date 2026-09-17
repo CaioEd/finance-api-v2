@@ -1,10 +1,4 @@
-"""O calendário das recorrências — datas puras, sem banco nem relógio.
-
-O que se protege aqui é o que um usuário nota só meses depois: a conta do dia
-31 que passou a cair no dia 28 para sempre depois de fevereiro, o mês que o
-agendador fora do ar deixou de registrar, a regra pausada que volta cobrando a
-pausa inteira.
-"""
+"""Calendário das recorrências: dia 31 em mês curto, meses perdidos, regra pausada."""
 
 from __future__ import annotations
 

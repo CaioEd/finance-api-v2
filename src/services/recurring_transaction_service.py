@@ -1,22 +1,9 @@
-"""Regra das recorrências: o CRUD da regra e a rodada do agendador.
+"""Regra das recorrências: CRUD da regra e rodada do agendador.
 
-Python puro, como os demais serviços: as dependências são `Protocol`, e a regra
-se exercita sem Postgres (`tests/unit/test_recurring_transaction_service.py`).
-O calendário — em que dia cai cada ocorrência — é de `services.recurrence`.
-
-Quatro regras vivem aqui, e só aqui:
-
-1. **A categoria precisa ser visível para o dono**, com a mesma recusa única de
-   `services.transaction_service` para a inexistente e a de outra pessoa.
-2. **Recorrência não lança o passado.** A data de início no passado vale como
-   hoje, e reativar uma regra pausada recomeça da próxima data a partir de
-   hoje — o que venceu durante a pausa não volta.
-3. **Trocar o dia não pula nem repete mês.** A próxima ocorrência continua no
-   mês em que estava, só que no dia novo. Se esse dia já passou, o mês ainda
-   não tinha sido registrado e agora venceu: entra na hora.
-4. **Toda escrita termina registrando o que venceu**, no mesmo commit. Depois
-   de qualquer resposta desta API, uma regra ativa tem a próxima data no
-   futuro; o agendador (`register_due`) faz o mesmo pelas que ninguém tocou.
+- Recorrência não lança o passado: início retroativo e retomada de pausa contam de hoje.
+- Trocar o dia mantém o mês pendente; se o dia novo já passou, o mês entra na hora.
+- Toda escrita comita junto o que já venceu: uma regra ativa sai sempre com a
+  próxima data no futuro.
 """
 
 from __future__ import annotations
@@ -42,8 +29,6 @@ from services.transaction_service import CategoryLookup, UnitOfWork
 
 
 class RecurringTransactionStore(Protocol):
-    """O que este serviço precisa de um repositório de recorrências."""
-
     async def list_recurring(
         self, user_id: UUID, *, kind: CategoryKind | None, limit: int, offset: int
     ) -> Sequence[RecurringTransaction]: ...
@@ -62,8 +47,6 @@ class RecurringTransactionStore(Protocol):
 
 
 class TransactionSink(Protocol):
-    """A única coisa que recorrência exige de lançamentos: acrescentar os que venceram."""
-
     def add(self, transaction: Transaction) -> None: ...
 
 
@@ -77,13 +60,10 @@ class RecurringTransactionPage:
 
 @dataclass(frozen=True, slots=True)
 class DueRound:
-    """O que uma rodada do agendador fez."""
-
     rules: int
-    """Quantas regras vencidas a rodada travou. Menos que o lote: acabou o trabalho."""
+    """Regras travadas; menos que o lote significa que acabou."""
 
     occurrences: int
-    """Quantos lançamentos entraram — mais que `rules` quando alguém deve vários meses."""
 
 
 class RecurringTransactionService:
@@ -119,8 +99,7 @@ class RecurringTransactionService:
         today = self._clock.today()
         start = max(data.starts_on or today, today)
         rule = RecurringTransaction(
-            # Explícito, e não o default da coluna: os lançamentos que vencerem
-            # já nesta requisição apontam para a regra antes do flush.
+            # Id no Python: os lançamentos vencidos apontam para a regra antes do flush.
             id=uuid4(),
             user_id=user.id,
             category_id=category.id,
@@ -142,16 +121,13 @@ class RecurringTransactionService:
         rule = await self._owned_or_fail(user, rule_id, lock=True)
         changes = data.changes()
 
-        # A categoria sai do laço pela mesma razão de `TransactionService.update`:
-        # revalidar a visibilidade, e manter `category` — de onde vem `kind` —
-        # apontando para a nova na resposta desta requisição.
+        # Fora do laço, como em `TransactionService.update`: revalida e troca `category`.
         if "category_id" in changes:
             category = await self._visible_category_or_fail(user, changes.pop("category_id"))
             rule.category_id = category.id
             rule.category = category
 
-        # O mês da próxima ocorrência é lido antes de aplicar a mudança: é o
-        # primeiro mês ainda não registrado, e nenhuma edição volta para antes dele.
+        # Lido antes das mudanças: é o primeiro mês ainda não registrado.
         pending_month = recurrence.month_of(rule.next_occurrence_on)
         reactivating = changes.get("is_active") is True and not rule.is_active
 
@@ -170,19 +146,13 @@ class RecurringTransactionService:
         return rule
 
     async def delete(self, user: User, rule_id: UUID) -> None:
-        """Exclui a regra; o que ela já registrou fica, sem o vínculo (`SET NULL`)."""
+        """O que a regra já registrou fica, sem o vínculo (`SET NULL`)."""
         rule = await self._owned_or_fail(user, rule_id)
         await self._recurrences.delete(rule)
         await self._commit()
 
     async def register_due(self, *, limit: int) -> DueRound:
-        """Uma rodada do agendador: até `limit` regras vencidas, de qualquer dono.
-
-        Trava as regras, acrescenta os lançamentos que elas devem, avança a
-        próxima data e comita — tudo numa transação. É ela que impede o mesmo
-        mês de entrar duas vezes, e não uma constraint: ver
-        `repositories.recurring_transaction_repository.lock_due`.
-        """
+        """Um lote do agendador, de qualquer dono: trava, lança, avança a data e comita junto."""
         today = self._clock.today()
         rules = await self._recurrences.lock_due(today, limit=limit)
         occurrences = sum(self._register_due(rule, today) for rule in rules)

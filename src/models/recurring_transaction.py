@@ -1,23 +1,12 @@
-"""Model de recorrência: a regra que registra um lançamento todo mês, sozinha.
+"""Model de recorrência: o molde de um lançamento que se repete todo mês.
 
-Uma recorrência não é um lançamento. É o **molde** de um — valor, categoria e
-descrição — mais o dia do mês em que ele acontece. Quem registra os lançamentos
-é o agendador (`jobs.recurring_transactions`), e cada lançamento gerado é uma
-linha comum de `transactions`, que aponta de volta para a regra que o criou.
+Guarda valor, categoria, descrição e dia do mês. O que ela registra é lançamento
+comum em `transactions`, apontando de volta por `recurring_transaction_id` —
+saldo, extrato e PDF continuam somando uma tabela só.
 
-Guardar a ocorrência como lançamento de verdade, e não calculá-la na leitura, é
-o que mantém "saldo é derivado de `transactions`" verdadeiro: o saldo, o
-extrato e o PDF continuam somando uma tabela só, e a despesa gerada se edita e
-se exclui como qualquer outra.
-
-O estado do agendamento é uma coluna só, `next_occurrence_on`: a próxima data
-que ainda não foi registrada. O agendador registra tudo que tiver essa data em
-hoje ou antes e a avança **na mesma transação** do INSERT — é isso, e não uma
-constraint de unicidade, que impede o mesmo mês de ser lançado duas vezes (ver
-`repositories.recurring_transaction_repository.lock_due`).
-
-O `kind` segue a regra de `models.transaction`: vem da categoria, nunca é
-gravado aqui.
+`next_occurrence_on` é o estado do agendamento: avançá-lo no mesmo commit do
+INSERT é o que impede um mês de entrar duas vezes (ver `lock_due`). O `kind`
+vem da categoria, como em `models.transaction`.
 """
 
 from __future__ import annotations
@@ -54,11 +43,7 @@ DAY_OF_MONTH_MIN = 1
 DAY_OF_MONTH_MAX = 31
 
 FK_RECURRING_CATEGORY = "fk_recurring_transactions_category_id_categories"
-"""Nome que `NAMING_CONVENTION` dá à FK de `category_id` desta tabela.
-
-Lido por quem exclui categoria (`repositories.category_repository`): a
-recorrência prende a categoria como o lançamento prende, e pelo mesmo motivo.
-"""
+"""Nome da FK de `category_id`; lido por quem traduz a violação em 409/422."""
 
 
 class RecurringTransaction(TimestampMixin, Base):
@@ -77,16 +62,11 @@ class RecurringTransaction(TimestampMixin, Base):
     )
     category_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
-        # Sem `ondelete`, pela mesma razão de `transactions.category_id`: excluir
-        # a conta cascateia para as duas tabelas na mesma instrução, e excluir
-        # uma categoria que alguma recorrência usa vira 409 `category_in_use`.
-        # Apagar a regra junto com o rótulo pararia um lançamento mensal sem
-        # ninguém ter pedido.
+        # Sem `ondelete`, como em `transactions`: categoria em uso vira 409.
         ForeignKey("categories.id"),
         nullable=False,
     )
     category: Mapped[Category] = relationship(lazy="raise")
-    """Sempre carregada pelo repositório — ver `models.transaction.Transaction.category`."""
 
     amount: Mapped[Decimal] = mapped_column(
         Numeric(AMOUNT_MAX_DIGITS, AMOUNT_DECIMAL_PLACES), nullable=False
@@ -96,36 +76,20 @@ class RecurringTransaction(TimestampMixin, Base):
     )
 
     day_of_month: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    """O dia em que o lançamento acontece, de 1 a 31.
-
-    Em mês mais curto que o dia pedido, a ocorrência cai no último dia do mês:
-    "todo dia 31" é 28 (ou 29) de fevereiro e 30 de abril, e volta a ser 31 em
-    março. O dia não se perde de um mês para o outro porque cada ocorrência é
-    calculada a partir dele, e não da data anterior.
-    """
+    """De 1 a 31; em mês mais curto, a ocorrência cai no último dia."""
 
     next_occurrence_on: Mapped[date] = mapped_column(Date, nullable=False)
-    """A próxima competência ainda não registrada, no fuso da aplicação.
-
-    Não é campo de entrada: nasce da data de início e do dia, e só o serviço o
-    move — ao registrar uma ocorrência, ao trocar o dia e ao reativar.
-    """
+    """Próxima data ainda não registrada. Só o serviço a move; nunca é entrada."""
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
-    """Pausada, a regra não registra nada, e o que venceu durante a pausa não volta."""
+    """Pausada, não registra nada — e o que venceu na pausa não volta."""
 
     occurrences: Mapped[list[Transaction]] = relationship(lazy="raise", passive_deletes=True)
-    """Os lançamentos que esta regra gerou. Ninguém lê esta coleção — e é de propósito.
+    """Ninguém lê esta coleção: ela existe para ordenar os INSERTs.
 
-    Ela existe pela ordem dos INSERTs. Criar um lançamento já com a recorrência
-    nova numa requisição só grava as duas linhas no mesmo flush, e o SQLAlchemy
-    só ordena INSERTs de tabelas diferentes pelas `relationship` declaradas, não
-    pela FK: sem esta, a ordem sai do nome dos mappers, e a FK passaria a
-    depender de "recurring" vir antes de "transactions" no alfabeto.
-
-    `passive_deletes=True` deixa o `ON DELETE SET NULL` com o banco: sem ele,
-    excluir a regra tentaria carregar a coleção para anular cada lançamento — e
-    `lazy="raise"` recusaria.
+    O SQLAlchemy ordena escritas entre tabelas pelas `relationship`, não pela FK.
+    Sem ela, regra e lançamento criados no mesmo flush dependeriam da ordem
+    alfabética dos mappers. `passive_deletes` deixa o `SET NULL` com o banco.
     """
 
     __table_args__ = (
@@ -134,23 +98,18 @@ class RecurringTransaction(TimestampMixin, Base):
             f"day_of_month BETWEEN {DAY_OF_MONTH_MIN} AND {DAY_OF_MONTH_MAX}",
             name="day_of_month_range",
         ),
-        # A listagem é "as minhas, pelo dia do mês".
         Index("ix_recurring_transactions_user_id_day_of_month", "user_id", "day_of_month"),
-        # A consulta do agendador: só as ativas, pela data da próxima ocorrência.
-        # Parcial porque a pausada nunca é candidata, e a varredura não precisa
-        # passar por ela a cada rodada.
+        # Consulta do agendador; parcial porque regra pausada nunca é candidata.
         Index(
             "ix_recurring_transactions_next_occurrence_on",
             "next_occurrence_on",
             postgresql_where=text("is_active"),
         ),
-        # Sem este, a checagem da FK ao excluir uma categoria varre a tabela.
         Index("ix_recurring_transactions_category_id", "category_id"),
     )
 
     @property
     def kind(self) -> CategoryKind:
-        """Receita ou despesa — do `kind` da categoria, a única fonte."""
         return self.category.kind
 
     def __repr__(self) -> str:

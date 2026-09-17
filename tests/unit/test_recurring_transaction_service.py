@@ -1,13 +1,7 @@
-"""Regra das recorrências — sem banco e sem HTTP.
+"""Regra das recorrências com dubles em memória, sem banco.
 
-O serviço conversa com `RecurringTransactionStore`, `TransactionSink`,
-`CategoryLookup` e `UnitOfWork`, e os dubles daqui os implementam em memória.
-O que se cobre é o que só este serviço decide: de onde a regra começa, o que
-trocar o dia faz com o mês pendente, por que retomar não cobra a pausa, e que
-toda escrita sai com o que já venceu registrado.
-
-Que a trava de `lock_due` de fato pula a linha travada por outra conexão é
-assunto do Postgres, e está em `tests/integration/test_recurring_transactions.py`.
+A trava de `lock_due` entre conexões é testada contra Postgres, em
+`tests/integration/test_recurring_transactions.py`.
 """
 
 from __future__ import annotations

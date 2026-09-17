@@ -58,9 +58,8 @@ def settings() -> Settings:
         argon2_time_cost=1,
         argon2_memory_cost_kib=8,
         argon2_parallelism=1,
-        # O agendador de recorrências fica desligado: ele abriria a própria sessão
-        # na subida, contra o `Database` que este fixture ainda vai trocar. Quem o
-        # exercita chama `register_due_recurrences` direto, com o relógio que quer.
+        # Desligado: abriria sessão contra o `Database` que o fixture ainda troca.
+        # Os testes chamam `register_due_recurrences` direto.
         recurring_scheduler_enabled=False,
     )
 

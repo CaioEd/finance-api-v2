@@ -1,10 +1,7 @@
 """Contrato público das recorrências.
 
-Herda as duas decisões de `schemas.transaction` — `amount` sai como string e
-`kind` não é campo de entrada — e acrescenta uma, própria: **`next_occurrence_on`
-só sai, nunca entra.** A próxima data é consequência do dia do mês, da data de
-início e do que já foi registrado; aceitá-la no corpo abriria caminho para
-registrar o mesmo mês duas vezes, ou para pular um sem ninguém ver.
+Mesmas regras de `schemas.transaction` (`amount` string, `kind` só de saída), e
+`next_occurrence_on` também só sai: aceitá-lo permitiria pular ou repetir mês.
 """
 
 from __future__ import annotations
@@ -27,14 +24,10 @@ class RecurringTransactionOut(BaseModel):
     id: UUID
     amount: Decimal
     kind: CategoryKind
-    """Derivado da categoria, nunca gravado — ver `models.recurring_transaction`."""
-
     description: str
     category: TransactionCategoryOut
     day_of_month: int
     next_occurrence_on: date
-    """A próxima data em que o lançamento será registrado, se a regra estiver ativa."""
-
     is_active: bool
     created_at: datetime
 
@@ -51,32 +44,21 @@ class RecurringTransactionCreateIn(BaseModel):
     description: Description = ""
     day_of_month: DayOfMonth
     starts_on: date | None = None
-    """A partir de quando registrar. Ausente, ou no passado, vale como hoje.
-
-    Recorrência não lança meses que já passaram: quem quer o histórico lança o
-    histórico. Sem essa trava, `starts_on=2001-01-01` criaria trezentos
-    lançamentos numa requisição.
-    """
+    """Ausente ou no passado vale como hoje: recorrência não lança meses que passaram."""
 
 
 class RecurringTransactionUpdateIn(PatchIn):
-    """Todos os campos opcionais: é PATCH — ver `schemas.base.PatchIn`.
-
-    O que muda aqui vale para as próximas ocorrências; o que já foi registrado
-    é lançamento comum e se edita em `/transactions`.
-    """
+    """PATCH (ver `schemas.base.PatchIn`); vale para as próximas ocorrências."""
 
     amount: Money | None = None
     category_id: UUID | None = None
     description: Description | None = None
     day_of_month: DayOfMonth | None = None
     is_active: bool | None = None
-    """`false` pausa, `true` retoma — da próxima data a partir de hoje, sem cobrar a pausa."""
+    """`false` pausa; `true` retoma a partir de hoje, sem lançar a pausa."""
 
 
 class RecurringTransactionPageOut(BaseModel):
-    """Página de listagem: `total` é do filtro inteiro, não do que veio nesta."""
-
     items: list[RecurringTransactionOut]
     total: int
     limit: int

@@ -1,21 +1,8 @@
-"""Recorrências contra Postgres de verdade.
+"""Recorrências contra Postgres: o que o SQLite da suíte de API não reproduz.
 
-O que só existe aqui, e por isso justifica o container:
-
-- **a trava do agendador.** `FOR UPDATE ... SKIP LOCKED` é o que deixa duas
-  réplicas rodarem a mesma rodada sem lançar o mesmo mês duas vezes. O SQLite
-  da suíte de API ignora a cláusula, então lá a garantia não tem como ser
-  verificada — só a sua ausência de efeito colateral;
-- **as constraints pelo nome.** `409 category_in_use` para a categoria presa a
-  uma recorrência depende de o Postgres dizer qual FK falhou; o `SET NULL` e o
-  `CHECK` do dia são DDL da migration, não do `Base.metadata`;
-- **o schema da migration**, com o índice parcial do agendador.
-
-Quase tudo roda na transação com rollback de cada teste (`db_session`). A
-exceção é a trava: provar que uma conexão pula a linha travada por outra exige
-duas conexões enxergando o mesmo dado, e dado não comitado é invisível para a
-segunda. Esses testes comitam de verdade e apagam o que criaram no fim — a
-conta, que leva junto categoria, regra e lançamentos em cascata.
+A trava `SKIP LOCKED`, as FKs pelo nome e o schema da migration. Os testes da
+trava precisam de duas conexões vendo o mesmo dado, então comitam e excluem a
+conta criada no fim.
 """
 
 from __future__ import annotations
@@ -99,10 +86,7 @@ async def test_the_database_refuses_a_day_outside_the_month(
 
 
 async def test_a_category_used_by_a_rule_cannot_be_deleted(client: AsyncClient) -> None:
-    """409 `category_in_use`, e não 500: o Postgres diz qual FK falhou, e ela é traduzida.
-
-    A regra não tem lançamento nenhum ainda — é a recorrência sozinha que prende a categoria.
-    """
+    """Só a regra, sem lançamento, já prende a categoria: 409 pelo nome da FK."""
     ana = await register_user(client)
     categoria = await a_category(client, ana)
     created = await client.post(
@@ -153,12 +137,7 @@ async def test_deleting_a_rule_unlinks_the_transactions_it_created(
 async def test_an_existing_transaction_becomes_recurring_against_postgres(
     client: AsyncClient,
 ) -> None:
-    """O `UPDATE` do lançamento precisa sair depois do `INSERT` da regra.
-
-    O Postgres confere a FK a cada instrução: se o flush mandasse o `UPDATE`
-    primeiro, `recurring_transaction_id` apontaria para uma regra que ainda não
-    existe. Quem ordena as duas é `RecurringTransaction.occurrences`.
-    """
+    """O Postgres confere a FK a cada instrução: o `UPDATE` tem de vir após o `INSERT` da regra."""
     ana = await register_user(client)
     categoria = await a_category(client, ana)
     lancamento = await client.post(

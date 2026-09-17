@@ -1,10 +1,4 @@
-"""O agendador em segundo plano e a ligação dele na subida da aplicação.
-
-Sem banco: o trabalho agendado é uma corrotina de mentira. O que se afirma é o
-que faz o registro automático das recorrências acontecer — roda na subida, roda
-de novo a cada intervalo, sobrevive a uma rodada que falha, para junto com a
-aplicação — e que a configuração o liga e desliga de verdade.
-"""
+"""Laço do agendador e a ligação dele na subida da aplicação, com um job de mentira."""
 
 from __future__ import annotations
 

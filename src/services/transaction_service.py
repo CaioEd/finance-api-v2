@@ -15,9 +15,8 @@ Três regras vivem aqui, e só aqui:
 3. **"Hoje" vem do `Clock`**, nunca de `date.today()` — é o que torna o default
    de `occurred_on` testável e o prende ao fuso da aplicação.
 
-E uma quarta, para quem pede `recurrence` — na criação ou na edição: o
-lançamento **vale pelo mês dele**, e a recorrência começa no mês seguinte — ver
-`_start_recurrence`.
+Com `recurrence` (na criação ou na edição), o lançamento vale pelo mês dele e a
+recorrência começa no mês seguinte — ver `_start_recurrence`.
 """
 
 from __future__ import annotations
@@ -74,10 +73,7 @@ class CategoryLookup(Protocol):
 
 
 class RecurrenceSink(Protocol):
-    """A única coisa que lançar exige de recorrências: acrescentar uma nova.
-
-    Listar, editar e pausar são de `services.recurring_transaction_service`.
-    """
+    """Lançar só cria recorrência; editá-la é de `recurring_transaction_service`."""
 
     def add(self, rule: RecurringTransaction) -> None: ...
 
@@ -151,24 +147,15 @@ class TransactionService:
         return transaction
 
     def _start_recurrence(self, transaction: Transaction, day_of_month: int, today: date) -> None:
-        """Cria a recorrência que repete `transaction` todo mês, no mesmo commit dele.
+        """Cria, no mesmo commit, a regra que repete `transaction` (já editado, se for PATCH).
 
-        O lançamento que a pediu **é** o do mês dele, então a regra começa no
-        mês seguinte: registrar a Netflix no dia 3 com "todo dia 5" não pode
-        gerar outra Netflix no dia 5 do mesmo mês. E, como toda recorrência,
-        não lança o passado — um lançamento retroativo de julho que pede para
-        se repetir começa a contar de hoje, não registra agosto de uma vez.
-
-        Se a primeira data já for hoje, ela é registrada agora: depois desta
-        resposta, a regra ativa sempre tem a próxima ocorrência no futuro.
-
-        Na edição vale igual, com o lançamento já editado: a regra copia o valor,
-        a categoria e a descrição novos, e conta a partir da data nova.
+        Começa no mês seguinte ao do lançamento — a Netflix do dia 3 com "todo
+        dia 5" não se repete no dia 5 do mesmo mês — e nunca antes de hoje. Se a
+        primeira data for hoje, já é registrada.
         """
         start = max(shift_month(month_of(transaction.occurred_on), 1).first_day, today)
         rule = RecurringTransaction(
-            # O id sai daqui, e não do default da coluna: o lançamento aponta
-            # para a regra antes de qualquer flush.
+            # Id no Python: o lançamento aponta para a regra antes do flush.
             id=uuid4(),
             user_id=transaction.user_id,
             category_id=transaction.category_id,
@@ -187,9 +174,7 @@ class TransactionService:
     async def update(
         self, user: User, transaction_id: UUID, data: TransactionUpdateIn
     ) -> Transaction:
-        # Pedir recorrência trava a linha: dois envios do mesmo formulário ao
-        # mesmo tempo leriam os dois "sem recorrência" e criariam duas regras. Com
-        # a trava, o segundo espera o primeiro comitar, relê o vínculo e leva 409.
+        # Com `recurrence`, trava a linha: dois envios simultâneos não criam duas regras.
         transaction = await self._owned_or_fail(
             user, transaction_id, lock=data.recurrence is not None
         )
@@ -197,7 +182,7 @@ class TransactionService:
             raise TransactionAlreadyRecurringError()
 
         changes = data.changes()
-        # Não é coluna: é a regra nova, criada depois de aplicadas as outras mudanças.
+        # Não é coluna: vira a regra, criada depois das outras mudanças.
         changes.pop("recurrence", None)
 
         # A categoria sai do laço: trocá-la exige revalidar a visibilidade, e

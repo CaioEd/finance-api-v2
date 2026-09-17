@@ -107,9 +107,7 @@ class TransactionRepository:
         Não é `session.get`: aquele traria a linha de qualquer dono, e o escopo
         passaria a depender de quem chamou lembrar de conferir.
 
-        `lock=True` trava a linha até o commit — ver `TransactionService.update`.
-        `of=Transaction`, para o JOIN não travar junto a categoria, que é de todos
-        no caso das globais.
+        `lock=True` trava só o lançamento, até o commit (ver `TransactionService.update`).
         """
         statement = _with_category().where(
             Transaction.id == transaction_id, Transaction.user_id == user_id
@@ -129,9 +127,7 @@ class TransactionRepository:
 def translate_integrity_error(exc: IntegrityError) -> DomainError:
     """Traduz a violação da FK de categoria **vista de quem insere o lançamento**.
 
-    Vale para as duas tabelas que prendem categoria — `transactions` e
-    `recurring_transactions` —, porque um lançamento pode nascer junto com a
-    sua recorrência, e a recorrência sozinha passa pela mesma checagem.
+    Vale também para a FK de `recurring_transactions`.
 
     O serviço já conferiu que a categoria é visível antes de gravar, então
     chegar aqui significa que ela deixou de existir entre a checagem e o

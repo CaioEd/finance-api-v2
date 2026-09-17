@@ -14,23 +14,15 @@ from services.recurring_transaction_service import RecurringTransactionService
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 100
-"""Regras por transação.
-
-Lote, e não tudo de uma vez: a rodada trava as regras que processa até o commit,
-e uma transação única seguraria todas as recorrências do sistema enquanto
-milhares de lançamentos entram — inclusive contra o usuário que só queria
-editar a sua.
-"""
+"""Regras por transação: um lote só travaria todas as recorrências até o fim da rodada."""
 
 
 async def register_due_recurrences(
     database: Database, clock: Clock, *, batch_size: int = BATCH_SIZE
 ) -> int:
-    """Roda lotes até não sobrar regra vencida; devolve quantos lançamentos entraram.
+    """Roda lotes até acabar o que venceu; devolve quantos lançamentos entraram.
 
-    Cada lote numa sessão nova: o commit de um lote não depende do seguinte, e
-    uma falha no meio perde só o lote que falhou — que continua vencido e volta
-    na próxima rodada.
+    Um lote por sessão: se um falha, só ele volta na próxima rodada.
     """
     registered = 0
     while True:
@@ -44,8 +36,7 @@ async def register_due_recurrences(
             )
             batch = await service.register_due(limit=batch_size)
         registered += batch.occurrences
-        # Lote incompleto é a consulta dizendo que acabou. As que outra réplica
-        # travou foram puladas e são dela; esperar por elas aqui não adiantaria.
+        # Lote incompleto: acabou (o que outra réplica travou é dela).
         if batch.rules < batch_size:
             break
     if registered:

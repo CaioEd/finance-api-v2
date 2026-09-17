@@ -71,8 +71,7 @@ def settings() -> Settings:
         argon2_time_cost=1,
         argon2_memory_cost_kib=8,
         argon2_parallelism=1,
-        # O agendador de recorrências abriria sessões fora da transação com rollback
-        # de cada teste; quem o exercita chama o serviço direto.
+        # Desligado: abriria sessões fora da transação com rollback dos testes.
         recurring_scheduler_enabled=False,
     )
 

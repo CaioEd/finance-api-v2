@@ -1,19 +1,7 @@
-"""Recorrências de ponta a ponta: da requisição ao lançamento que aparece sozinho.
+"""Recorrências de ponta a ponta: da requisição ao lançamento no extrato e no saldo.
 
-As duas matrizes já cobrem o que `/recurring-transactions` tem de igual às
-outras rotas — quem alcança, 404, 422, PATCH parcial, paginação. Aqui fica o
-que é só dela, e principalmente o que o usuário vê: marcar a despesa como
-recorrente no formulário, o mês virar, e a despesa estar lá — no extrato, no
-saldo, apontando para a regra.
-
-O agendador roda chamado direto (`register_due_recurrences`), contra o banco
-desta suíte e com um relógio parado em 2099: as datas dos testes não dependem
-do dia em que a suíte roda, e o access token continua validado pelo relógio de
-verdade (ver o fixture `clock` do conftest).
-
-O que só o Postgres responde — a trava que pula a linha de outra réplica, o
-`SET NULL` e o `409 category_in_use` pelo nome da FK — está em
-`tests/integration/test_recurring_transactions.py`.
+O que é igual às outras rotas fica nas matrizes. O agendador é chamado direto,
+com relógio parado em 2099 para as datas não dependerem do dia da execução.
 """
 
 from __future__ import annotations
@@ -151,10 +139,7 @@ def a_plain_transaction(client: ApiClient, user: RegisteredUser, category: str) 
 
 
 def test_an_existing_transaction_can_become_recurring(client: ApiClient) -> None:
-    """Lançada avulsa e editada depois: a regra copia o lançamento editado e começa depois dele.
-
-    O lançamento em si não muda de data — ele continua sendo o do mês dele.
-    """
+    """A regra copia o lançamento já editado e começa no mês seguinte; a data dele não muda."""
     ana = register_user(client)
     streaming = a_category(client, ana, name="Streaming", kind="expense")
     avulsa = a_plain_transaction(client, ana, streaming)

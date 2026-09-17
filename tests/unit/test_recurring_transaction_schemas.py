@@ -1,8 +1,6 @@
-"""Contrato de entrada e saída das recorrências — e o pedaço dele que mora no lançamento.
+"""Contrato das recorrências, inclusive o `recurrence` do lançamento.
 
-Sem I/O. A validação daqui repete de propósito os CHECKs da tabela (`amount >
-0`, `day_of_month BETWEEN 1 AND 31`) para a recusa sair como 422 com o campo
-apontado; quem tem a palavra final é o banco.
+Repete os CHECKs da tabela para a recusa sair como 422 com o campo apontado.
 """
 
 from __future__ import annotations
@@ -56,10 +54,7 @@ def test_the_amount_follows_the_rule_of_the_transaction(amount: str) -> None:
 
 @pytest.mark.parametrize("field", ["next_occurrence_on", "kind", "is_active", "user_id"])
 def test_what_the_service_decides_is_not_an_input_field(field: str) -> None:
-    """A próxima data é consequência do dia e do início; aceitá-la pularia ou repetiria mês.
-
-    `is_active` também não entra na criação: regra nasce ativa, e pausa é edição.
-    """
+    """Próxima data e `kind` são calculados; `is_active` só muda na edição."""
     with pytest.raises(ValidationError):
         create(**{field: "2026-10-05" if "occurrence" in field else "x"})
 

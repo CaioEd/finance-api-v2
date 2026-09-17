@@ -10,10 +10,8 @@ Duas decisões de contrato que vêm do desenho:
   `models.transaction`); aceitá-lo no corpo seria abrir caminho para
   contradizer a categoria escolhida.
 
-A recorrência entra aqui por um campo só, `recurrence`, na criação e na edição:
-ele pede que o lançamento passe a se repetir todo mês. Editar, pausar e excluir
-a regra que já existe é assunto de `/recurring-transactions`
-(`schemas.recurring_transaction`).
+`recurrence` (criação e edição) pede que o lançamento se repita todo mês; a
+regra em si se edita em `/recurring-transactions`.
 """
 
 from __future__ import annotations
@@ -51,11 +49,7 @@ type Description = Annotated[
 ]
 
 type DayOfMonth = Annotated[int, Field(ge=DAY_OF_MONTH_MIN, le=DAY_OF_MONTH_MAX)]
-"""Dia do mês de uma recorrência, de 1 a 31 — o mesmo CHECK da coluna.
-
-31 é aceito de propósito: "todo dia 31" é o último dia de todo mês, e cai em 30
-ou em 28 quando o mês é mais curto (ver `models.recurring_transaction`).
-"""
+"""De 1 a 31, como o CHECK da coluna; em mês mais curto, cai no último dia."""
 
 
 class TransactionCategoryOut(BaseModel):
@@ -86,7 +80,7 @@ class TransactionOut(BaseModel):
     description: str
     category: TransactionCategoryOut
     recurring_transaction_id: UUID | None = None
-    """A recorrência que registrou este lançamento — ou que ele criou —, `None` no avulso."""
+    """A recorrência ligada ao lançamento; `None` no avulso."""
 
     created_at: datetime
 
@@ -96,7 +90,7 @@ class TransactionOut(BaseModel):
 
 
 class RecurrenceIn(BaseModel):
-    """O pedido de repetir, todo mês, o lançamento que está sendo criado."""
+    """Pedido de repetir o lançamento todo mês."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -113,12 +107,7 @@ class TransactionCreateIn(BaseModel):
 
     description: Description = ""
     recurrence: RecurrenceIn | None = None
-    """Presente, o lançamento vira o primeiro de uma recorrência mensal.
-
-    Ele vale pelo mês dele, e a recorrência começa no mês seguinte — ver
-    `services.transaction_service.TransactionService.create`. Lançamento e regra
-    nascem no mesmo commit: não existe o lançamento salvo com a regra perdida.
-    """
+    """Cria a recorrência no mesmo commit; ela começa no mês seguinte ao do lançamento."""
 
 
 class TransactionUpdateIn(PatchIn):
@@ -133,11 +122,9 @@ class TransactionUpdateIn(PatchIn):
     occurred_on: date | None = None
     description: Description | None = None
     recurrence: RecurrenceIn | None = None
-    """Presente, torna recorrente um lançamento que ainda não é — com a mesma regra da criação.
+    """Torna recorrente um lançamento avulso; se ele já tiver recorrência, 409.
 
-    Nulo ou ausente é "não mexa", como todo campo de PATCH: não há como desfazer a
-    recorrência por aqui. Pausar ou excluir a regra é em `/recurring-transactions`,
-    e pedir recorrência para um lançamento que já tem uma é `409`.
+    Nulo é "não mexa": pausar ou excluir a regra é em `/recurring-transactions`.
     """
 
 

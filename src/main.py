@@ -42,8 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     try:
         yield
     finally:
-        # O agendador antes do banco: parar depois do `dispose` seria deixar uma
-        # rodada em curso sem conexão para terminar.
+        # Antes do `dispose`, para uma rodada em curso não ficar sem conexão.
         if recurrences is not None:
             await recurrences.stop()
         await app.state.database.dispose()
@@ -51,11 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 def _recurring_scheduler(app: FastAPI, settings: Settings) -> PeriodicJob | None:
-    """Liga o registro automático das recorrências, se a configuração pedir.
-
-    O banco e o relógio são lidos do `app.state` a cada rodada, e não capturados
-    aqui: é o mesmo objeto que as rotas usam, inclusive quando um teste o troca.
-    """
+    """Banco e relógio são lidos do `app.state` a cada rodada, e não capturados aqui."""
     if not settings.recurring_scheduler_enabled:
         return None
     job = PeriodicJob(

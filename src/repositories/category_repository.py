@@ -67,8 +67,7 @@ def translate_integrity_error(exc: IntegrityError) -> ConflictError:
     detail = str(exc.orig)
     if "uq_categories_" in detail:
         return CategoryNameTakenError()
-    # O outro lado das FKs: excluir uma categoria que ainda tem lançamento, ou
-    # que alguma recorrência ainda usa.
+    # O outro lado das FKs: categoria ainda usada por lançamento ou recorrência.
     if FK_CATEGORY in detail or FK_RECURRING_CATEGORY in detail:
         return CategoryInUseError()
     return ConflictError()

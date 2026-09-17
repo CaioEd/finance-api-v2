@@ -145,9 +145,7 @@ class CategoryInUseError(ConflictError):
     code = "category_in_use"
     message = "Esta categoria tem lançamentos ou recorrências e não pode ser excluída."
     # Apagar os lançamentos junto seria perder histórico financeiro para
-    # remover um rótulo, e apagar a recorrência junto pararia um lançamento
-    # mensal sem ninguém ter pedido. Quem quer mesmo se livrar da categoria
-    # move os dois para outra antes.
+    # remover um rótulo, e apagar a recorrência pararia um lançamento mensal.
 
 
 class InvalidCategoryError(UnprocessableError):
@@ -167,9 +165,7 @@ class TransactionNotFoundError(NotFoundError):
 class TransactionAlreadyRecurringError(ConflictError):
     code = "transaction_already_recurring"
     message = "Este lançamento já faz parte de uma recorrência."
-    # 409 e não um "sucesso" silencioso: a regra que já existe se edita em
-    # /recurring-transactions, e criar uma segunda lançaria o mesmo gasto duas
-    # vezes por mês.
+    # Uma segunda regra lançaria o mesmo gasto duas vezes por mês.
 
 
 class RecurringTransactionNotFoundError(NotFoundError):

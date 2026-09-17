@@ -1,21 +1,8 @@
-"""O calendário das recorrências: quando cada ocorrência cai, e o que já venceu.
+"""Calendário das recorrências: funções puras sobre datas.
 
-Funções puras sobre datas, mais `register_due`, que aplica o calendário a uma
-regra. Moram fora dos dois serviços porque os dois precisam delas — o de
-recorrências, no CRUD e no agendador; o de lançamentos, quando um lançamento
-nasce já pedindo para se repetir — e nenhum dos dois deve importar o outro para
-isso.
-
-Três regras, e só elas:
-
-1. **Uma ocorrência por mês, no dia pedido — ou no último dia, se o mês for mais
-   curto.** Cada data é calculada do dia da regra e do mês, nunca da data
-   anterior: "todo dia 31" cai em 28 de fevereiro e volta a ser 31 em março.
-   Somar um mês à ocorrência anterior prenderia a regra no dia 28 para sempre.
-2. **O que venceu é registrado inteiro.** Um agendador fora do ar por três meses
-   deve três lançamentos, cada um com a data dele — não um só, e não nenhum.
-3. **"Hoje" é parâmetro.** Quem chama resolve pelo `Clock`; aqui não existe
-   relógio.
+Fora dos serviços porque os dois (lançamentos e recorrências) o usam. Cada data
+sai do dia da regra, nunca da anterior — senão "todo dia 31" ficaria preso no 28
+depois de fevereiro. "Hoje" é parâmetro; quem chama resolve pelo `Clock`.
 """
 
 from __future__ import annotations
@@ -32,12 +19,12 @@ def month_of(day: date) -> MonthRange:
 
 
 def occurrence_in(month: MonthRange, day_of_month: int) -> date:
-    """A ocorrência daquele mês: o dia pedido, ou o último do mês se ele não existir."""
+    """O dia pedido naquele mês, ou o último dia se o mês for mais curto."""
     return month.first_day.replace(day=min(day_of_month, month.last_day.day))
 
 
 def first_occurrence_from(start: date, day_of_month: int) -> date:
-    """A primeira ocorrência em `start` ou depois — no próprio mês, se ainda der."""
+    """A primeira ocorrência em `start` ou depois."""
     month = month_of(start)
     candidate = occurrence_in(month, day_of_month)
     if candidate >= start:
@@ -46,19 +33,15 @@ def first_occurrence_from(start: date, day_of_month: int) -> date:
 
 
 def following_occurrence(occurrence: date, day_of_month: int) -> date:
-    """A ocorrência do mês seguinte ao de `occurrence`."""
     return occurrence_in(shift_month(month_of(occurrence), 1), day_of_month)
 
 
 def register_due(rule: RecurringTransaction, today: date) -> list[Transaction]:
-    """Os lançamentos que a regra deve até `today`, com `next_occurrence_on` já avançada.
+    """Lançamentos que a regra deve até `today`, já avançando `next_occurrence_on`.
 
-    Não grava nada: devolve as linhas para quem tem a unidade de trabalho, que
-    as acrescenta e comita **junto** com a data avançada. Separar as duas
-    escritas é como um mês acaba registrado duas vezes — o INSERT entra, o
-    avanço da data não, e a próxima rodada encontra a mesma ocorrência vencida.
-
-    Regra pausada não deve nada: o que venceu durante a pausa não volta.
+    Não grava: quem chama comita as linhas junto com a data avançada, senão o
+    mês pode entrar duas vezes. Vários meses vencidos geram um lançamento cada;
+    regra pausada não deve nada.
     """
     due: list[Transaction] = []
     if not rule.is_active:

@@ -1,23 +1,10 @@
 """cria recurring_transactions
 
-A recorrência é a regra; o que ela registra todo mês é lançamento comum, em
-`transactions`, com `recurring_transaction_id` apontando de volta. Três
-decisões desta migration:
-
-- `recurring_transactions.category_id` **não declara `ondelete`**, pela mesma
-  razão de `transactions.category_id`: excluir a conta cascateia para as duas
-  tabelas na mesma instrução, e excluir uma categoria que uma recorrência ainda
-  usa falha e vira `409 category_in_use`.
-- `transactions.recurring_transaction_id` é **`ON DELETE SET NULL`**: excluir a
-  regra encerra os próximos meses, não apaga o dinheiro que já entrou ou saiu.
-- **Não há `UNIQUE (recurring_transaction_id, occurred_on)`.** O mesmo mês não
-  entra duas vezes porque o agendador trava a regra e avança
-  `next_occurrence_on` no mesmo commit do INSERT. Uma constraint aqui
-  reprovaria a rodada inteira no dia em que alguém movesse um lançamento gerado
-  para a data de uma ocorrência futura — que é uma edição legítima.
-
-O índice de `next_occurrence_on` é parcial (`WHERE is_active`): é a consulta do
-agendador, a cada ciclo, e regra pausada nunca é candidata.
+- `category_id` sem `ondelete`, como em `transactions`: categoria em uso vira 409.
+- `transactions.recurring_transaction_id` com `SET NULL`: excluir a regra não
+  apaga o que ela já lançou.
+- Sem `UNIQUE (regra, data)`: a duplicidade é evitada pela trava do agendador, e
+  a constraint barraria mover um lançamento gerado para a data de um mês futuro.
 
 Revision ID: 5d28986187b0
 Revises: 4c1f7a90d5e2
@@ -61,7 +48,6 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint("amount > 0", name=op.f("ck_recurring_transactions_amount_positive")),
-        # Dia 31 é válido: em mês mais curto a ocorrência cai no último dia.
         sa.CheckConstraint(
             "day_of_month BETWEEN 1 AND 31",
             name=op.f("ck_recurring_transactions_day_of_month_range"),
@@ -101,7 +87,7 @@ def upgrade() -> None:
     )
 
     op.add_column("transactions", sa.Column("recurring_transaction_id", sa.Uuid(), nullable=True))
-    # Sem este, o SET NULL ao excluir uma recorrência varre `transactions`.
+    # Para o SET NULL ao excluir uma recorrência não varrer `transactions`.
     op.create_index(
         "ix_transactions_recurring_transaction_id",
         "transactions",

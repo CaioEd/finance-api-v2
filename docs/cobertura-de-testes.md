@@ -15,7 +15,7 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **97%** — 2566 linhas executáveis, 69 sem cobertura |
+| **Cobertura total** | **97%** — 2561 linhas executáveis, 69 sem cobertura |
 | Suíte | 746 testes: 325 unitários, 292 de API, 129 de integração (2 pulados) |
 | Sem Postgres (`-m "not integration"`) | 95% — os 617 testes que rodam sem Docker |
 | Só os unitários | 81% — número de import, não de regra; ver abaixo |
@@ -58,7 +58,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `api/routes/users.py` | 28 | 100% |
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 44 | 100% |
-| `core/config.py` | 112 | 98% |
+| `core/config.py` | 111 | 98% |
 | `core/database.py` | 28 | 96% |
 | `core/errors.py` | 126 | 98% |
 | `core/pdf.py` | 192 | 100% |
@@ -73,7 +73,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `jobs/recurring_transactions.py` | 23 | 100% |
 | `main.py` | 57 | 100% |
 | `models/category.py` | 27 | 93% |
-| `models/recurring_transaction.py` | 36 | 97% |
+| `models/recurring_transaction.py` | 35 | 97% |
 | `models/refresh_token.py` | 19 | 95% |
 | `models/transaction.py` | 34 | 97% |
 | `models/user.py` | 30 | 97% |
@@ -88,7 +88,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `schemas/balance.py` | 25 | 100% |
 | `schemas/base.py` | 7 | 100% |
 | `schemas/category.py` | 25 | 100% |
-| `schemas/recurring_transaction.py` | 45 | 100% |
+| `schemas/recurring_transaction.py` | 43 | 100% |
 | `schemas/transaction.py` | 60 | 100% |
 | `schemas/user.py` | 57 | 100% |
 | `services/admin_user_service.py` | 65 | 100% |
@@ -96,7 +96,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `services/balance_service.py` | 63 | 100% |
 | `services/category_service.py` | 49 | 100% |
 | `services/recurrence.py` | 25 | 100% |
-| `services/recurring_transaction_service.py` | 104 | 100% |
+| `services/recurring_transaction_service.py` | 103 | 100% |
 | `services/report_service.py` | 102 | 100% |
 | `services/transaction_service.py` | 91 | 100% |
 | `services/user_service.py` | 37 | 100% |
@@ -121,10 +121,10 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `services/auth_service.py:104` | rehash da senha quando o custo do argon2 mudou |
 | `core/security.py:154-155` | access token sem os claims obrigatórios |
 | `core/security.py:66-67` | `verify()` diante de um hash corrompido (`InvalidHashError`) |
-| `core/config.py:155` | `JWT_SECRET_KEY` com menos de 32 caracteres |
-| `core/errors.py:260-261` | handler de exceção não tratada — o `500` genérico |
+| `core/config.py:153` | `JWT_SECRET_KEY` com menos de 32 caracteres |
+| `core/errors.py:256-257` | handler de exceção não tratada — o `500` genérico |
 | `api/routes/health.py:46-47` | readiness quando o banco não responde |
-| `repositories/user_repository.py:55`, `category_repository.py:74`, `transaction_repository.py:149` | o erro genérico para constraint desconhecida |
+| `repositories/user_repository.py:55`, `category_repository.py:73`, `transaction_repository.py:145` | o erro genérico para constraint desconhecida |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
 
 **Três dos quatro caminhos de `auth_service` que abriam esta lista saíram dela** — login e refresh de
@@ -221,8 +221,8 @@ comportamento que ninguém olhou.
 | `models/refresh_token.py:55` (`is_usable_at`) | **nada no código chama esta property** — `AuthService.refresh` checa `revoked_at` e `expires_at` direto |
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
 | `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness |
-| `core/config.py:176` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
-| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:136`, `models/recurring_transaction.py:157` | `__repr__`, texto de depuração |
+| `core/config.py:174` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
+| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:131`, `models/recurring_transaction.py:116` | `__repr__`, texto de depuração |
 
 A primeira linha é o relatório de cobertura fazendo o trabalho dele: apontou código morto, não
 teste faltando. Ou passa a ser usada, ou sai. `models.user.is_admin` saiu desta lista sem ninguém

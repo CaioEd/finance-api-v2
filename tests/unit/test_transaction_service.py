@@ -374,11 +374,7 @@ async def test_a_plain_create_starts_no_recurrence(user: User) -> None:
 
 
 async def test_create_with_recurrence_starts_the_rule_in_the_next_month(user: User) -> None:
-    """O lançamento criado é o do mês dele: a Netflix de 3/9 com "todo dia 5" não repete em 5/9.
-
-    Regra e lançamento saem no mesmo commit, com o lançamento já apontando para
-    a regra — não existe o lançamento salvo com a recorrência perdida.
-    """
+    """Netflix de 3/9 com "todo dia 5" não se repete em 5/9; regra e lançamento num commit."""
     category = make_category(user_id=user.id, name="Streaming")
     store, work, sink = FakeTransactionStore(), FakeUnitOfWork(), FakeRecurrenceSink()
     service = build_service(
@@ -438,10 +434,7 @@ async def test_a_future_transaction_starts_its_recurrence_after_its_own_month(us
 async def test_a_retroactive_transaction_does_not_backfill_the_months_in_between(
     user: User,
 ) -> None:
-    """Julho lançado em setembro, "todo dia 10": agosto e 10/9 não aparecem de uma vez.
-
-    Recorrência não lança o passado — a regra conta a partir de hoje.
-    """
+    """Julho lançado em setembro, "todo dia 10": a regra conta de hoje, sem agosto."""
     category = make_category(user_id=user.id)
     store, sink = FakeTransactionStore(), FakeRecurrenceSink()
     service = build_service(
@@ -647,11 +640,7 @@ async def test_update_of_another_users_transaction_is_not_found(user: User) -> N
 
 
 async def test_update_can_turn_an_existing_transaction_into_a_recurrence(user: User) -> None:
-    """A despesa lançada avulsa em 3/9 vira "todo dia 5": a regra começa em outubro.
-
-    Mesma regra da criação — o lançamento vale pelo mês dele. E a linha é lida
-    travada, para dois envios simultâneos não criarem duas regras.
-    """
+    """Avulsa de 3/9 vira "todo dia 5": regra em outubro, com a linha lida travada."""
     category = make_category(user_id=user.id, name="Streaming")
     transaction = make_transaction(
         user_id=user.id, category=category, amount="39.90", occurred_on=date(2026, 9, 3)

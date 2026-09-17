@@ -1,13 +1,8 @@
 """Acesso a dados de recorrências.
 
-Mesmo desenho de `repositories.transaction_repository`: o escopo por dono é
-imposto **aqui** — toda consulta de usuário nasce de
-`RecurringTransaction.user_id == user_id` — e toda consulta traz a categoria
-junto (`contains_eager`), de onde sai o `kind`.
-
-A exceção é `lock_due`, a consulta do agendador, que atravessa todos os donos
-de propósito: registrar o lançamento de todo mundo é o trabalho dela. Nenhuma
-rota a alcança.
+Como em `transaction_repository`: escopo por dono imposto aqui e categoria
+carregada junto. A exceção é `lock_due`, do agendador, que atravessa todos os
+donos de propósito e não é alcançada por nenhuma rota.
 """
 
 from __future__ import annotations
@@ -25,7 +20,7 @@ from models.recurring_transaction import RecurringTransaction
 
 
 def _conditions(user_id: UUID, kind: CategoryKind | None) -> list[ColumnElement[bool]]:
-    """Um `WHERE` só para a listagem e a contagem — senão o `total` mente."""
+    """O mesmo `WHERE` na listagem e na contagem, senão o `total` mente."""
     conditions: list[ColumnElement[bool]] = [RecurringTransaction.user_id == user_id]
     if kind is not None:
         conditions.append(Category.kind == kind)
@@ -50,8 +45,7 @@ class RecurringTransactionRepository:
         statement = (
             _with_category()
             .where(*_conditions(user_id, kind))
-            # Pelo dia do mês, que é como se pensa numa conta fixa ("a do dia
-            # 5"); o id desempata para a paginação ser estável.
+            # Pelo dia do mês; o id desempata para a paginação ser estável.
             .order_by(RecurringTransaction.day_of_month, RecurringTransaction.id)
             .limit(limit)
             .offset(offset)
@@ -71,14 +65,10 @@ class RecurringTransactionRepository:
     async def get_owned(
         self, rule_id: UUID, user_id: UUID, *, lock: bool = False
     ) -> RecurringTransaction | None:
-        """Devolve `None` para recorrência de terceiro — que a borda traduz em 404.
+        """`None` para recorrência de terceiro (a borda traduz em 404).
 
-        `lock=True` trava a linha até o commit. É o que a edição pede: trocar o
-        dia ou reativar recalcula a próxima data a partir da que está gravada,
-        e o agendador avançando essa mesma data no meio do caminho faria a
-        edição regravar o valor antigo — e o mês já registrado sairia de novo.
-        Com a linha travada, o agendador a pula (`SKIP LOCKED`) e a própria
-        edição registra o que tiver vencido.
+        `lock=True` trava a linha até o commit: a edição recalcula a próxima data,
+        e o agendador não pode avançá-la no meio do caminho.
         """
         statement = _with_category().where(
             RecurringTransaction.id == rule_id, RecurringTransaction.user_id == user_id
@@ -89,17 +79,11 @@ class RecurringTransactionRepository:
         return result.first()
 
     async def lock_due(self, today: date, *, limit: int) -> Sequence[RecurringTransaction]:
-        """Trava e devolve até `limit` recorrências ativas com ocorrência vencida.
+        """Trava e devolve até `limit` recorrências ativas e vencidas.
 
-        `FOR UPDATE ... SKIP LOCKED` é o que torna o agendador seguro com mais
-        de uma réplica rodando ao mesmo tempo: cada linha é de quem a travou
-        primeiro, e os outros seguem para as que sobraram em vez de esperar —
-        ou de registrar o mesmo mês outra vez. A trava vive até o commit, que é
-        o mesmo em que os lançamentos entram e a próxima data avança; depois
-        dele a linha não está mais vencida, e ninguém mais a encontra.
-
-        `of=RecurringTransaction` trava só a regra: o JOIN com `categories` não
-        pode prender a categoria, que é de todos no caso das globais.
+        `SKIP LOCKED` deixa várias réplicas rodarem juntas: cada linha fica com
+        quem a travou primeiro, até o commit que avança a data. `of=` evita
+        travar a categoria do JOIN.
         """
         statement = (
             _with_category()

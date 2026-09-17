@@ -1,7 +1,4 @@
-"""Trabalhos em segundo plano: a montagem, fora de requisição, do que os serviços fazem.
+"""Trabalhos em segundo plano: a fiação de `dependencies/`, mas fora de requisição.
 
-Irmão de `dependencies/`: lá a sessão e os repositórios chegam por `Depends`, a
-cada requisição; aqui não há requisição, e cada trabalho abre a própria sessão
-a partir do `Database` do `app.state`. A regra continua nos serviços — este
-pacote só liga as pontas, e quem o chama no tempo certo é `core.scheduler`.
+Cada trabalho abre a própria sessão a partir do `Database`; a regra fica nos serviços.
 """

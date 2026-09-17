@@ -100,8 +100,7 @@ def get_transaction_service(
 
     O serviço só enxerga de cada uma o que declarou precisar; o repositório de
     categorias chega inteiro, mas o Protocol estreito impede que lançar vire um
-    caminho para alterar categoria. O de recorrências, idem: lançar só cria a
-    regra, nunca a edita.
+    caminho para alterar categoria. O de recorrências, idem.
     """
     return TransactionService(
         unit_of_work=session,
@@ -119,7 +118,7 @@ def get_recurring_transaction_service(
     categories: CategoryRepository = Depends(get_category_repository),
     clock: Clock = Depends(get_clock),
 ) -> RecurringTransactionService:
-    """Os lançamentos entram como `TransactionSink`: a recorrência só acrescenta os que venceram."""
+    """Os lançamentos entram como `TransactionSink`."""
     return RecurringTransactionService(
         unit_of_work=session,
         recurrences=recurrences,
