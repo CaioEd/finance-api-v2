@@ -143,10 +143,9 @@ class CategoryNameTakenError(ConflictError):
 
 class CategoryInUseError(ConflictError):
     code = "category_in_use"
-    message = "Esta categoria tem lançamentos e não pode ser excluída."
+    message = "Esta categoria tem lançamentos ou recorrências e não pode ser excluída."
     # Apagar os lançamentos junto seria perder histórico financeiro para
-    # remover um rótulo. Quem quer mesmo se livrar da categoria move os
-    # lançamentos para outra antes.
+    # remover um rótulo, e apagar a recorrência pararia um lançamento mensal.
 
 
 class InvalidCategoryError(UnprocessableError):
@@ -161,6 +160,17 @@ class InvalidCategoryError(UnprocessableError):
 class TransactionNotFoundError(NotFoundError):
     code = "transaction_not_found"
     message = "Lançamento não encontrado."
+
+
+class TransactionAlreadyRecurringError(ConflictError):
+    code = "transaction_already_recurring"
+    message = "Este lançamento já faz parte de uma recorrência."
+    # Uma segunda regra lançaria o mesmo gasto duas vezes por mês.
+
+
+class RecurringTransactionNotFoundError(NotFoundError):
+    code = "recurring_transaction_not_found"
+    message = "Recorrência não encontrada."
 
 
 class InvalidPeriodError(UnprocessableError):

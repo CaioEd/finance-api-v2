@@ -92,6 +92,7 @@ known-first-party = [
     "cli",
     "core",
     "dependencies",
+    "jobs",
     "main",
     "models",
     "repositories",

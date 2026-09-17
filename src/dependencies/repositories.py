@@ -14,6 +14,7 @@ from dependencies.database import get_session
 from repositories.admin_user_repository import AdminUserRepository
 from repositories.balance_repository import BalanceRepository
 from repositories.category_repository import CategoryRepository
+from repositories.recurring_transaction_repository import RecurringTransactionRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.transaction_repository import TransactionRepository
 from repositories.user_repository import UserRepository
@@ -36,6 +37,12 @@ def get_transaction_repository(
     session: AsyncSession = Depends(get_session),
 ) -> TransactionRepository:
     return TransactionRepository(session)
+
+
+def get_recurring_transaction_repository(
+    session: AsyncSession = Depends(get_session),
+) -> RecurringTransactionRepository:
+    return RecurringTransactionRepository(session)
 
 
 def get_refresh_token_repository(

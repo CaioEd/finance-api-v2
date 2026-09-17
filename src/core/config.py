@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     rate_limit_login_email_attempts: PositiveInt = 10
     rate_limit_login_email_window_seconds: PositiveInt = 600
 
+    # --- Recorrências (docs/recorrencias.md) ------------------------------
+    recurring_scheduler_enabled: bool = True
+    recurring_scheduler_interval_seconds: PositiveInt = 900
+    """Intervalo entre rodadas; uma rodada sempre roda na subida."""
+
     # --- Banco -----------------------------------------------------------
     db_echo: bool = False
     db_pool_size: int = 5

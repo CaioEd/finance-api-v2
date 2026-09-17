@@ -14,24 +14,34 @@ Três regras vivem aqui, e só aqui:
    dois: trocar de categoria numa edição troca o tipo junto, por construção.
 3. **"Hoje" vem do `Clock`**, nunca de `date.today()` — é o que torna o default
    de `occurred_on` testável e o prende ao fuso da aplicação.
+
+Com `recurrence` (na criação ou na edição), o lançamento vale pelo mês dele e a
+recorrência começa no mês seguinte — ver `_start_recurrence`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.exc import IntegrityError
 
-from core.clock import Clock
-from core.errors import InvalidCategoryError, TransactionNotFoundError
+from core.clock import Clock, shift_month
+from core.errors import (
+    InvalidCategoryError,
+    TransactionAlreadyRecurringError,
+    TransactionNotFoundError,
+)
 from models.category import Category
+from models.recurring_transaction import RecurringTransaction
 from models.transaction import Transaction
 from models.user import User
 from repositories.transaction_repository import TransactionFilters, translate_integrity_error
 from schemas.transaction import TransactionCreateIn, TransactionUpdateIn
+from services.recurrence import first_occurrence_from, month_of, register_due
 
 
 class TransactionStore(Protocol):
@@ -43,7 +53,9 @@ class TransactionStore(Protocol):
 
     async def count_transactions(self, user_id: UUID, *, filters: TransactionFilters) -> int: ...
 
-    async def get_owned(self, transaction_id: UUID, user_id: UUID) -> Transaction | None: ...
+    async def get_owned(
+        self, transaction_id: UUID, user_id: UUID, *, lock: bool = False
+    ) -> Transaction | None: ...
 
     def add(self, transaction: Transaction) -> None: ...
 
@@ -58,6 +70,12 @@ class CategoryLookup(Protocol):
     """
 
     async def get_visible(self, category_id: UUID, user_id: UUID) -> Category | None: ...
+
+
+class RecurrenceSink(Protocol):
+    """Lançar só cria recorrência; editá-la é de `recurring_transaction_service`."""
+
+    def add(self, rule: RecurringTransaction) -> None: ...
 
 
 class UnitOfWork(Protocol):
@@ -90,11 +108,13 @@ class TransactionService:
         unit_of_work: UnitOfWork,
         transactions: TransactionStore,
         categories: CategoryLookup,
+        recurrences: RecurrenceSink,
         clock: Clock,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._transactions = transactions
         self._categories = categories
+        self._recurrences = recurrences
         self._clock = clock
 
     async def list_transactions(
@@ -111,23 +131,59 @@ class TransactionService:
 
     async def create(self, user: User, data: TransactionCreateIn) -> Transaction:
         category = await self._visible_category_or_fail(user, data.category_id)
+        today = self._clock.today()
         transaction = Transaction(
             user_id=user.id,
             category_id=category.id,
             category=category,
             amount=data.amount,
-            occurred_on=data.occurred_on or self._clock.today(),
+            occurred_on=data.occurred_on or today,
             description=data.description,
         )
         self._transactions.add(transaction)
+        if data.recurrence is not None:
+            self._start_recurrence(transaction, data.recurrence.day_of_month, today)
         await self._commit()
         return transaction
+
+    def _start_recurrence(self, transaction: Transaction, day_of_month: int, today: date) -> None:
+        """Cria, no mesmo commit, a regra que repete `transaction` (já editado, se for PATCH).
+
+        Começa no mês seguinte ao do lançamento — a Netflix do dia 3 com "todo
+        dia 5" não se repete no dia 5 do mesmo mês — e nunca antes de hoje. Se a
+        primeira data for hoje, já é registrada.
+        """
+        start = max(shift_month(month_of(transaction.occurred_on), 1).first_day, today)
+        rule = RecurringTransaction(
+            # Id no Python: o lançamento aponta para a regra antes do flush.
+            id=uuid4(),
+            user_id=transaction.user_id,
+            category_id=transaction.category_id,
+            category=transaction.category,
+            amount=transaction.amount,
+            description=transaction.description,
+            day_of_month=day_of_month,
+            next_occurrence_on=first_occurrence_from(start, day_of_month),
+            is_active=True,
+        )
+        transaction.recurring_transaction_id = rule.id
+        self._recurrences.add(rule)
+        for occurrence in register_due(rule, today):
+            self._transactions.add(occurrence)
 
     async def update(
         self, user: User, transaction_id: UUID, data: TransactionUpdateIn
     ) -> Transaction:
-        transaction = await self._owned_or_fail(user, transaction_id)
+        # Com `recurrence`, trava a linha: dois envios simultâneos não criam duas regras.
+        transaction = await self._owned_or_fail(
+            user, transaction_id, lock=data.recurrence is not None
+        )
+        if data.recurrence is not None and transaction.recurring_transaction_id is not None:
+            raise TransactionAlreadyRecurringError()
+
         changes = data.changes()
+        # Não é coluna: vira a regra, criada depois das outras mudanças.
+        changes.pop("recurrence", None)
 
         # A categoria sai do laço: trocá-la exige revalidar a visibilidade, e
         # atribuir `category_id` cru deixaria `category` — de onde vem `kind` —
@@ -140,6 +196,9 @@ class TransactionService:
         for field, value in changes.items():
             setattr(transaction, field, value)
 
+        if data.recurrence is not None:
+            self._start_recurrence(transaction, data.recurrence.day_of_month, self._clock.today())
+
         await self._commit()
         return transaction
 
@@ -148,8 +207,10 @@ class TransactionService:
         await self._transactions.delete(transaction)
         await self._commit()
 
-    async def _owned_or_fail(self, user: User, transaction_id: UUID) -> Transaction:
-        transaction = await self._transactions.get_owned(transaction_id, user.id)
+    async def _owned_or_fail(
+        self, user: User, transaction_id: UUID, *, lock: bool = False
+    ) -> Transaction:
+        transaction = await self._transactions.get_owned(transaction_id, user.id, lock=lock)
         if transaction is None:
             raise TransactionNotFoundError()
         return transaction

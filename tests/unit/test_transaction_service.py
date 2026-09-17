@@ -25,14 +25,20 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from core.clock import Clock
-from core.errors import InvalidCategoryError, TransactionNotFoundError
+from core.errors import (
+    InvalidCategoryError,
+    TransactionAlreadyRecurringError,
+    TransactionNotFoundError,
+)
 from models.category import Category, CategoryKind
+from models.recurring_transaction import RecurringTransaction
 from models.transaction import FK_CATEGORY, Transaction
 from models.user import Role, User
 from repositories.transaction_repository import TransactionFilters
-from schemas.transaction import TransactionCreateIn, TransactionUpdateIn
+from schemas.transaction import RecurrenceIn, TransactionCreateIn, TransactionUpdateIn
 from services.transaction_service import (
     CategoryLookup,
+    RecurrenceSink,
     TransactionService,
     TransactionStore,
     UnitOfWork,
@@ -103,6 +109,7 @@ class FakeTransactionStore:
         self.added: list[Transaction] = []
         self.deleted: list[Transaction] = []
         self.last_query: dict[str, Any] | None = None
+        self.locked_reads = 0
 
     async def list_transactions(
         self, user_id: UUID, *, filters: TransactionFilters, limit: int, offset: int
@@ -118,8 +125,12 @@ class FakeTransactionStore:
     async def count_transactions(self, user_id: UUID, *, filters: TransactionFilters) -> int:
         return len(self._owned(user_id))
 
-    async def get_owned(self, transaction_id: UUID, user_id: UUID) -> Transaction | None:
+    async def get_owned(
+        self, transaction_id: UUID, user_id: UUID, *, lock: bool = False
+    ) -> Transaction | None:
         """O duble impõe o mesmo escopo do repositório: nada de outro dono sai daqui."""
+        if lock:
+            self.locked_reads += 1
         return next(
             (
                 transaction
@@ -159,6 +170,16 @@ class FakeCategoryLookup:
         )
 
 
+class FakeRecurrenceSink:
+    """Implementa `RecurrenceSink`: guarda as recorrências que o serviço criou."""
+
+    def __init__(self) -> None:
+        self.added: list[RecurringTransaction] = []
+
+    def add(self, rule: RecurringTransaction) -> None:
+        self.added.append(rule)
+
+
 class FakeUnitOfWork:
     """Transação de mentira: conta os commits e sabe falhar sob comando."""
 
@@ -181,15 +202,18 @@ def build_service(
     lookup: FakeCategoryLookup,
     unit_of_work: FakeUnitOfWork,
     clock: Clock | None = None,
+    sink: FakeRecurrenceSink | None = None,
 ) -> TransactionService:
     # As anotações forçam a checagem de que os dubles satisfazem os Protocol.
     transactions: TransactionStore = store
     categories: CategoryLookup = lookup
     work: UnitOfWork = unit_of_work
+    recurrences: RecurrenceSink = sink or FakeRecurrenceSink()
     return TransactionService(
         unit_of_work=work,
         transactions=transactions,
         categories=categories,
+        recurrences=recurrences,
         clock=clock or clock_at(datetime(2026, 9, 5, 12, 0, tzinfo=UTC)),
     )
 
@@ -331,6 +355,160 @@ async def test_create_rolls_back_when_the_category_vanishes_mid_flight(user: Use
     assert work.rollbacks == 1
 
 
+# ------------------------------------------------------- CREATE com recorrência
+
+
+async def test_a_plain_create_starts_no_recurrence(user: User) -> None:
+    category = make_category(user_id=user.id)
+    sink = FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore(), FakeCategoryLookup([category]), FakeUnitOfWork(), sink=sink
+    )
+
+    created = await service.create(
+        user, TransactionCreateIn(amount=Decimal("10.00"), category_id=category.id)
+    )
+
+    assert sink.added == []
+    assert created.recurring_transaction_id is None
+
+
+async def test_create_with_recurrence_starts_the_rule_in_the_next_month(user: User) -> None:
+    """Netflix de 3/9 com "todo dia 5" não se repete em 5/9; regra e lançamento num commit."""
+    category = make_category(user_id=user.id, name="Streaming")
+    store, work, sink = FakeTransactionStore(), FakeUnitOfWork(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        work,
+        clock=clock_at(datetime(2026, 9, 3, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    created = await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("39.90"),
+            category_id=category.id,
+            occurred_on=date(2026, 9, 3),
+            description="Netflix",
+            recurrence=RecurrenceIn(day_of_month=5),
+        ),
+    )
+
+    [rule] = sink.added
+    assert rule.next_occurrence_on == date(2026, 10, 5)
+    assert (rule.user_id, rule.category_id, rule.amount, rule.description) == (
+        user.id,
+        category.id,
+        Decimal("39.90"),
+        "Netflix",
+    )
+    assert rule.day_of_month == 5
+    assert rule.is_active
+    assert created.recurring_transaction_id == rule.id
+    assert store.added == [created], "nada venceu: só o lançamento pedido entra"
+    assert work.commits == 1
+
+
+async def test_a_future_transaction_starts_its_recurrence_after_its_own_month(user: User) -> None:
+    category = make_category(user_id=user.id)
+    sink = FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore(), FakeCategoryLookup([category]), FakeUnitOfWork(), sink=sink
+    )
+
+    await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("100.00"),
+            category_id=category.id,
+            occurred_on=date(2026, 12, 20),
+            recurrence=RecurrenceIn(day_of_month=20),
+        ),
+    )
+
+    assert sink.added[0].next_occurrence_on == date(2027, 1, 20)
+
+
+async def test_a_retroactive_transaction_does_not_backfill_the_months_in_between(
+    user: User,
+) -> None:
+    """Julho lançado em setembro, "todo dia 10": a regra conta de hoje, sem agosto."""
+    category = make_category(user_id=user.id)
+    store, sink = FakeTransactionStore(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("80.00"),
+            category_id=category.id,
+            occurred_on=date(2026, 7, 10),
+            recurrence=RecurrenceIn(day_of_month=10),
+        ),
+    )
+
+    assert sink.added[0].next_occurrence_on == date(2026, 10, 10)
+    assert len(store.added) == 1
+
+
+async def test_a_recurrence_whose_first_date_is_today_registers_it_now(user: User) -> None:
+    """Agosto lançado hoje, 17/9, "todo dia 17": setembro já venceu e entra na mesma resposta."""
+    category = make_category(user_id=user.id)
+    store, sink = FakeTransactionStore(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    created = await service.create(
+        user,
+        TransactionCreateIn(
+            amount=Decimal("80.00"),
+            category_id=category.id,
+            occurred_on=date(2026, 8, 17),
+            recurrence=RecurrenceIn(day_of_month=17),
+        ),
+    )
+
+    [rule] = sink.added
+    assert [t.occurred_on for t in store.added] == [date(2026, 8, 17), date(2026, 9, 17)]
+    assert {t.recurring_transaction_id for t in store.added} == {rule.id}
+    assert store.added[0] is created
+    assert rule.next_occurrence_on == date(2026, 10, 17)
+
+
+async def test_create_with_recurrence_refuses_an_invisible_category_before_creating_the_rule(
+    user: User,
+) -> None:
+    alheia = make_category(user_id=uuid4(), name="Barco")
+    sink, work = FakeRecurrenceSink(), FakeUnitOfWork()
+    service = build_service(FakeTransactionStore(), FakeCategoryLookup([alheia]), work, sink=sink)
+
+    with pytest.raises(InvalidCategoryError):
+        await service.create(
+            user,
+            TransactionCreateIn(
+                amount=Decimal("10.00"),
+                category_id=alheia.id,
+                recurrence=RecurrenceIn(day_of_month=5),
+            ),
+        )
+
+    assert sink.added == []
+    assert work.commits == 0
+
+
 # --------------------------------------------------------------------- GET
 
 
@@ -456,6 +634,141 @@ async def test_update_of_another_users_transaction_is_not_found(user: User) -> N
 
     with pytest.raises(TransactionNotFoundError):
         await service.update(user, de_outro.id, TransactionUpdateIn(amount=Decimal("1.00")))
+
+
+# ------------------------------------------------------- UPDATE com recorrência
+
+
+async def test_update_can_turn_an_existing_transaction_into_a_recurrence(user: User) -> None:
+    """Avulsa de 3/9 vira "todo dia 5": regra em outubro, com a linha lida travada."""
+    category = make_category(user_id=user.id, name="Streaming")
+    transaction = make_transaction(
+        user_id=user.id, category=category, amount="39.90", occurred_on=date(2026, 9, 3)
+    )
+    store, work, sink = FakeTransactionStore([transaction]), FakeUnitOfWork(), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        work,
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    updated = await service.update(
+        user, transaction.id, TransactionUpdateIn(recurrence=RecurrenceIn(day_of_month=5))
+    )
+
+    [rule] = sink.added
+    assert rule.next_occurrence_on == date(2026, 10, 5)
+    assert (rule.amount, rule.category_id, rule.day_of_month) == (
+        Decimal("39.90"),
+        category.id,
+        5,
+    )
+    assert updated.recurring_transaction_id == rule.id
+    assert updated.occurred_on == date(2026, 9, 3), "a recorrência não mexe no lançamento"
+    assert store.locked_reads == 1
+    assert work.commits == 1
+
+
+async def test_the_rule_copies_the_transaction_as_edited_in_the_same_request(user: User) -> None:
+    """Valor, categoria e data mudam junto com o pedido: a regra nasce do lançamento novo."""
+    antiga = make_category(user_id=user.id, name="Mercado")
+    streaming = make_category(user_id=user.id, name="Streaming")
+    transaction = make_transaction(
+        user_id=user.id, category=antiga, amount="10.00", occurred_on=date(2026, 9, 3)
+    )
+    sink = FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore([transaction]),
+        FakeCategoryLookup([antiga, streaming]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    await service.update(
+        user,
+        transaction.id,
+        TransactionUpdateIn(
+            amount=Decimal("55.90"),
+            category_id=streaming.id,
+            occurred_on=date(2026, 11, 20),
+            description="Netflix",
+            recurrence=RecurrenceIn(day_of_month=20),
+        ),
+    )
+
+    [rule] = sink.added
+    assert (rule.amount, rule.category, rule.description) == (
+        Decimal("55.90"),
+        streaming,
+        "Netflix",
+    )
+    assert rule.next_occurrence_on == date(2026, 12, 20)
+
+
+async def test_making_an_old_transaction_recurrent_registers_what_is_due_today(
+    user: User,
+) -> None:
+    category = make_category(user_id=user.id)
+    transaction = make_transaction(
+        user_id=user.id, category=category, occurred_on=date(2026, 8, 17)
+    )
+    store, sink = FakeTransactionStore([transaction]), FakeRecurrenceSink()
+    service = build_service(
+        store,
+        FakeCategoryLookup([category]),
+        FakeUnitOfWork(),
+        clock=clock_at(datetime(2026, 9, 17, 12, 0, tzinfo=UTC)),
+        sink=sink,
+    )
+
+    await service.update(
+        user, transaction.id, TransactionUpdateIn(recurrence=RecurrenceIn(day_of_month=17))
+    )
+
+    assert [t.occurred_on for t in store.added] == [date(2026, 9, 17)]
+    assert store.added[0].recurring_transaction_id == sink.added[0].id
+
+
+async def test_a_transaction_that_already_recurs_refuses_a_second_rule(user: User) -> None:
+    """Uma segunda regra lançaria o mesmo gasto duas vezes por mês: 409, e nada muda."""
+    category = make_category(user_id=user.id)
+    transaction = make_transaction(user_id=user.id, category=category, amount="10.00")
+    transaction.recurring_transaction_id = uuid4()
+    work, sink = FakeUnitOfWork(), FakeRecurrenceSink()
+    service = build_service(
+        FakeTransactionStore([transaction]), FakeCategoryLookup([category]), work, sink=sink
+    )
+
+    with pytest.raises(TransactionAlreadyRecurringError):
+        await service.update(
+            user,
+            transaction.id,
+            TransactionUpdateIn(amount=Decimal("99.00"), recurrence=RecurrenceIn(day_of_month=5)),
+        )
+
+    assert sink.added == []
+    assert transaction.amount == Decimal("10.00"), "a recusa vem antes de qualquer mudança"
+    assert work.commits == 0
+
+
+async def test_a_plain_update_neither_locks_nor_touches_the_recurrence(user: User) -> None:
+    category = make_category(user_id=user.id)
+    transaction = make_transaction(user_id=user.id, category=category)
+    rule_id = uuid4()
+    transaction.recurring_transaction_id = rule_id
+    store, sink = FakeTransactionStore([transaction]), FakeRecurrenceSink()
+    service = build_service(store, FakeCategoryLookup([category]), FakeUnitOfWork(), sink=sink)
+
+    updated = await service.update(
+        user, transaction.id, TransactionUpdateIn(amount=Decimal("1.00"), recurrence=None)
+    )
+
+    assert updated.recurring_transaction_id == rule_id
+    assert sink.added == []
+    assert store.locked_reads == 0
 
 
 # ------------------------------------------------------------------- DELETE

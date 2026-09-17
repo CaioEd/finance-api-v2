@@ -58,6 +58,9 @@ def settings() -> Settings:
         argon2_time_cost=1,
         argon2_memory_cost_kib=8,
         argon2_parallelism=1,
+        # Desligado: abriria sessão contra o `Database` que o fixture ainda troca.
+        # Os testes chamam `register_due_recurrences` direto.
+        recurring_scheduler_enabled=False,
     )
 
 

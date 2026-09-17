@@ -25,6 +25,7 @@ from sqlalchemy.orm import contains_eager
 
 from core.errors import DomainError, InvalidCategoryError, UnprocessableError
 from models.category import Category, CategoryKind
+from models.recurring_transaction import FK_RECURRING_CATEGORY
 from models.transaction import FK_CATEGORY, Transaction
 
 
@@ -98,15 +99,22 @@ class TransactionRepository:
         )
         return int((await self._session.execute(statement)).scalar_one())
 
-    async def get_owned(self, transaction_id: UUID, user_id: UUID) -> Transaction | None:
+    async def get_owned(
+        self, transaction_id: UUID, user_id: UUID, *, lock: bool = False
+    ) -> Transaction | None:
         """Devolve `None` para lançamento de terceiro — que a borda traduz em 404.
 
         Não é `session.get`: aquele traria a linha de qualquer dono, e o escopo
         passaria a depender de quem chamou lembrar de conferir.
+
+        `lock=True` trava só o lançamento, até o commit (ver `TransactionService.update`).
         """
-        result = await self._session.scalars(
-            _with_category().where(Transaction.id == transaction_id, Transaction.user_id == user_id)
+        statement = _with_category().where(
+            Transaction.id == transaction_id, Transaction.user_id == user_id
         )
+        if lock:
+            statement = statement.with_for_update(of=Transaction)
+        result = await self._session.scalars(statement)
         return result.first()
 
     def add(self, transaction: Transaction) -> None:
@@ -119,6 +127,8 @@ class TransactionRepository:
 def translate_integrity_error(exc: IntegrityError) -> DomainError:
     """Traduz a violação da FK de categoria **vista de quem insere o lançamento**.
 
+    Vale também para a FK de `recurring_transactions`.
+
     O serviço já conferiu que a categoria é visível antes de gravar, então
     chegar aqui significa que ela deixou de existir entre a checagem e o
     INSERT. Quem decide é o banco, porque um SELECT prévio sempre terá essa
@@ -129,6 +139,7 @@ def translate_integrity_error(exc: IntegrityError) -> DomainError:
     significado: lá é a exclusão da categoria esbarrando no lançamento que
     aponta para ela.
     """
-    if FK_CATEGORY in str(exc.orig):
+    detail = str(exc.orig)
+    if FK_CATEGORY in detail or FK_RECURRING_CATEGORY in detail:
         return InvalidCategoryError()
     return UnprocessableError()

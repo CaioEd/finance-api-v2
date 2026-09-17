@@ -36,6 +36,7 @@ from fastapi import FastAPI
 
 from schemas.base import PatchIn
 from schemas.category import CategoryUpdateIn
+from schemas.recurring_transaction import RecurringTransactionUpdateIn
 from schemas.transaction import TransactionUpdateIn
 from schemas.user import AdminUserUpdateIn
 from tests.api.client import ApiClient, Response
@@ -103,6 +104,18 @@ def a_transaction(client: ApiClient, user: RegisteredUser) -> Body:
     created = client.post("/api/v1/categories", headers=user.auth, json=a_category(client, user))
     created.raise_for_status()
     return {"amount": "12.34", "category_id": created.json()["id"], "description": "Feira"}
+
+
+def a_recurring_transaction(client: ApiClient, user: RegisteredUser) -> Body:
+    """Recorrência aponta para categoria como o lançamento, e sem data de início é hoje."""
+    created = client.post("/api/v1/categories", headers=user.auth, json=a_category(client, user))
+    created.raise_for_status()
+    return {
+        "amount": "39.90",
+        "category_id": created.json()["id"],
+        "description": "Streaming",
+        "day_of_month": 5,
+    }
 
 
 def an_account(_client: ApiClient, _user: RegisteredUser) -> Body:
@@ -184,6 +197,16 @@ RESOURCES = [
         paginated=True,
     ),
     Crud(
+        name="recorrencias",
+        collection="/api/v1/recurring-transactions",
+        item="/api/v1/recurring-transactions/{id}",
+        create=a_recurring_transaction,
+        patch={"amount": "44.90"},
+        update_schema=RecurringTransactionUpdateIn,
+        actor=register_user,
+        paginated=True,
+    ),
+    Crud(
         name="usuarios-admin",
         collection="/api/v1/admin/users",
         item="/api/v1/admin/users/{id}",
@@ -199,6 +222,9 @@ RESOURCES = [
 ROUTE_TEMPLATES = {
     "/api/v1/categories/{id}": "/api/v1/categories/{category_id}",
     "/api/v1/transactions/{id}": "/api/v1/transactions/{transaction_id}",
+    "/api/v1/recurring-transactions/{id}": (
+        "/api/v1/recurring-transactions/{recurring_transaction_id}"
+    ),
     "/api/v1/admin/users/{id}": "/api/v1/admin/users/{user_id}",
 }
 """O nome do parâmetro muda de rota para rota; o molde do OpenAPI usa o de lá."""

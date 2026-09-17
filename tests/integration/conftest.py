@@ -71,6 +71,8 @@ def settings() -> Settings:
         argon2_time_cost=1,
         argon2_memory_cost_kib=8,
         argon2_parallelism=1,
+        # Desligado: abriria sessões fora da transação com rollback dos testes.
+        recurring_scheduler_enabled=False,
     )
 
 

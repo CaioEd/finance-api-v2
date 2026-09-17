@@ -25,7 +25,9 @@ from core.config import Settings, get_settings
 from core.database import Database
 from core.errors import register_exception_handlers
 from core.rate_limit import ClientIpResolver, build_rate_limiter
+from core.scheduler import PeriodicJob
 from core.security import PasswordHasher, TokenCodec
+from jobs.recurring_transactions import register_due_recurrences
 from version import __version__
 
 logger = logging.getLogger(__name__)
@@ -35,12 +37,29 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings: Settings = app.state.settings
     app.state.database = Database(settings)
+    recurrences = _recurring_scheduler(app, settings)
     logger.info("aplicação iniciada em ambiente=%s", settings.environment)
     try:
         yield
     finally:
+        # Antes do `dispose`, para uma rodada em curso não ficar sem conexão.
+        if recurrences is not None:
+            await recurrences.stop()
         await app.state.database.dispose()
         logger.info("aplicação encerrada")
+
+
+def _recurring_scheduler(app: FastAPI, settings: Settings) -> PeriodicJob | None:
+    """Banco e relógio são lidos do `app.state` a cada rodada, e não capturados aqui."""
+    if not settings.recurring_scheduler_enabled:
+        return None
+    job = PeriodicJob(
+        lambda: register_due_recurrences(app.state.database, app.state.clock),
+        interval_seconds=settings.recurring_scheduler_interval_seconds,
+        name="recorrências",
+    )
+    job.start()
+    return job
 
 
 def create_app(settings: Settings | None = None, clock: Clock | None = None) -> FastAPI:

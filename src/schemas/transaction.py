@@ -9,6 +9,9 @@ Duas decisões de contrato que vêm do desenho:
 - **`kind` não é campo de entrada.** O tipo do lançamento é o da categoria (ver
   `models.transaction`); aceitá-lo no corpo seria abrir caminho para
   contradizer a categoria escolhida.
+
+`recurrence` (criação e edição) pede que o lançamento se repita todo mês; a
+regra em si se edita em `/recurring-transactions`.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer
 
 from models.category import CategoryKind
+from models.recurring_transaction import DAY_OF_MONTH_MAX, DAY_OF_MONTH_MIN
 from models.transaction import (
     AMOUNT_DECIMAL_PLACES,
     AMOUNT_MAX_DIGITS,
@@ -43,6 +47,9 @@ type Description = Annotated[
     str,
     StringConstraints(strip_whitespace=True, max_length=DESCRIPTION_MAX_LENGTH),
 ]
+
+type DayOfMonth = Annotated[int, Field(ge=DAY_OF_MONTH_MIN, le=DAY_OF_MONTH_MAX)]
+"""De 1 a 31, como o CHECK da coluna; em mês mais curto, cai no último dia."""
 
 
 class TransactionCategoryOut(BaseModel):
@@ -72,11 +79,22 @@ class TransactionOut(BaseModel):
     occurred_on: date
     description: str
     category: TransactionCategoryOut
+    recurring_transaction_id: UUID | None = None
+    """A recorrência ligada ao lançamento; `None` no avulso."""
+
     created_at: datetime
 
     @field_serializer("amount")
     def _amount_as_string(self, amount: Decimal) -> str:
         return f"{amount:.{AMOUNT_DECIMAL_PLACES}f}"
+
+
+class RecurrenceIn(BaseModel):
+    """Pedido de repetir o lançamento todo mês."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    day_of_month: DayOfMonth
 
 
 class TransactionCreateIn(BaseModel):
@@ -88,6 +106,8 @@ class TransactionCreateIn(BaseModel):
     """Ausente é "hoje" — resolvido pelo `Clock`, no fuso da aplicação."""
 
     description: Description = ""
+    recurrence: RecurrenceIn | None = None
+    """Cria a recorrência no mesmo commit; ela começa no mês seguinte ao do lançamento."""
 
 
 class TransactionUpdateIn(PatchIn):
@@ -101,6 +121,11 @@ class TransactionUpdateIn(PatchIn):
     category_id: UUID | None = None
     occurred_on: date | None = None
     description: Description | None = None
+    recurrence: RecurrenceIn | None = None
+    """Torna recorrente um lançamento avulso; se ele já tiver recorrência, 409.
+
+    Nulo é "não mexa": pausar ou excluir a regra é em `/recurring-transactions`.
+    """
 
 
 class TransactionPageOut(BaseModel):
