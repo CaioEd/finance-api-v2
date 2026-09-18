@@ -73,6 +73,8 @@ def settings() -> Settings:
         argon2_parallelism=1,
         # Desligado: abriria sessões fora da transação com rollback dos testes.
         recurring_scheduler_enabled=False,
+        # Idem para o de cotações — e ele ainda sairia à rede a cada rodada.
+        investment_scheduler_enabled=False,
     )
 
 

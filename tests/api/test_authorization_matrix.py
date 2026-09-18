@@ -253,6 +253,15 @@ def an_earning_body_of(client: ApiClient, user: RegisteredUser) -> dict[str, Any
     return {"amount": "12.50", "category_id": an_income_category_id_of(client, user)}
 
 
+def a_crypto_search(_client: ApiClient, _user: RegisteredUser) -> str:
+    """`type` é obrigatório na busca; sem ele a rota responderia 422 ao dono.
+
+    Para o anônimo o caminho nu basta: a autenticação decide antes de o
+    parâmetro ser lido.
+    """
+    return "/api/v1/investments/assets?type=crypto"
+
+
 DATE_RANGE_QUERY = "occurred_from=2026-01-01&occurred_to=2026-12-31"
 
 
@@ -331,6 +340,9 @@ PROTECTED_ROUTES = [
     ProtectedRoute("GET", "/api/v1/investments"),
     ProtectedRoute("POST", "/api/v1/investments", body=dict(AN_INVESTMENT)),
     ProtectedRoute("GET", "/api/v1/investments/summary"),
+    # Cripto é lista fechada e não sai à rede: é o tipo que a matriz pode
+    # exercitar sem provedor configurado nem requisição para fora.
+    ProtectedRoute("GET", "/api/v1/investments/assets", setup=a_crypto_search),
     ProtectedRoute("GET", "/api/v1/investments/{investment_id}", setup=an_investment_of),
     ProtectedRoute(
         "PATCH",

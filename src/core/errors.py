@@ -195,6 +195,13 @@ class InvalidInvestmentAssetError(UnprocessableError):
     # ela não é o que está faltando.
 
 
+class NotSearchableInvestmentTypeError(UnprocessableError):
+    code = "investment_type_not_searchable"
+    message = "Só renda variável tem ativo a pesquisar."
+    # CDB, LCI, Tesouro e poupança não têm símbolo: não há provedor a consultar,
+    # e uma lista vazia faria a tela parecer quebrada em vez de mal pedida.
+
+
 class InvalidInvestmentFieldsError(UnprocessableError):
     code = "invalid_investment_fields"
     message = "Campos incompatíveis com o tipo do investimento."

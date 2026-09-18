@@ -10,8 +10,8 @@ agendador, `recorrencias.md`.
 
 | Tipo | O que cobre | Onde | Testes | Postgres |
 |---|---|---|---|---|
-| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso. Inclui o calendário das recorrências, o laço do agendador e o preço médio ponderado dos aportes | `tests/unit/` | 366 | não |
-| **Matriz de autorização** | **quem** alcança cada rota: anônimo, autenticado e admin × rota pública, protegida e de admin | `tests/api/test_authorization_matrix.py` | 158 | não |
+| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso. Inclui o calendário das recorrências, o laço do agendador, o preço médio ponderado dos aportes, o acrual da renda fixa e os clientes dos provedores de cotação (sobre `httpx.MockTransport`, contra os corpos que a BRAPI, a Twelve Data e o Banco Central realmente devolvem) | `tests/unit/` | 441 | não |
+| **Matriz de autorização** | **quem** alcança cada rota: anônimo, autenticado e admin × rota pública, protegida e de admin | `tests/api/test_authorization_matrix.py` | 162 | não |
 | **Matriz de CRUD** | **o que** cada rota faz: criar → ler → listar → atualizar → excluir, os 404/422 e o PATCH parcial | `tests/api/test_crud_contract.py` | 95 | não |
 | **Tradução do SQLite** | o agrupamento mensal do saldo, única consulta que depende de uma função traduzida à mão | `tests/api/test_balance.py` | 4 | não |
 | **Relatórios em PDF** | a travessia inteira: a query string vira recorte, o recorte vira folha, e a folha chega com os cabeçalhos que fazem o navegador baixar | `tests/api/test_reports.py` | 12 | não |
@@ -20,14 +20,17 @@ agendador, `recorrencias.md`.
 | **Limite de tentativas** | o `429` do login com `Retry-After`: por IP, por e-mail entre IPs, `X-Forwarded-For` forjado e o cabeçalho exposto no CORS (ver `rate-limit.md`) | `tests/api/test_login_rate_limit.py` | 11 | não |
 | **Recorrências** | do formulário ao lançamento que aparece sozinho: `recurrence` num commit só no `POST /transactions` e no `PATCH` de um avulso (com `409` para quem já é recorrente), o agendador registrando cada mês vencido (dia 31 em fevereiro, idempotente, em lotes, todos os donos), pausa, exclusão que preserva o que foi lançado, o saldo somando o gerado (ver `recorrencias.md`) | `tests/api/test_recurring_transactions.py` | 18 | não |
 | **Investimentos** | as duas metades da carteira (renda fixa tem índice e taxa, variável tem ativo e quantidade, e campo da metade errada é recusado), o preço médio ponderado do aporte, e a ponte com os lançamentos: aporte é despesa, provento é receita, os dois entram no saldo, e excluir a posição não apaga o que ela movimentou (ver `investimentos.md`) | `tests/api/test_investments.py` | 24 | não |
+| **Cotações** | o agendador de 15 min de ponta a ponta: a posição corrigida pelo preço, o dólar convertido pelo câmbio da rodada, a renda fixa capitalizada por dia cheio, o orçamento que atrasa um ativo sem abandoná-lo, e o provedor fora do ar que deixa todo valor onde estava | `tests/api/test_investment_quotes.py` | 24 | não |
+| **Busca de ativos** | qual provedor responde por qual tipo, e a lista fechada de nove criptomoedas que não sai à rede | `tests/api/test_investment_assets.py` | 7 | não |
 | **Operacionais** | liveness e readiness | `tests/api/test_health.py` | 2 | não |
-| **Contrato de domínio** | o que só aquele recurso faz: rotação de refresh, categoria do sistema vs. do usuário, o saldo agregado e o seu escopo por dono, a trava do agendador de recorrências entre duas conexões, e o catálogo global de ativos com o índice único sobre `upper(symbol)` | `tests/integration/test_auth.py`, `test_users.py`, `test_categories.py`, `test_admin_users.py`, `test_balance.py`, `test_recurring_transactions.py`, `test_investments.py` | 121 | sim |
+| **Contrato de domínio** | o que só aquele recurso faz: rotação de refresh, categoria do sistema vs. do usuário, o saldo agregado e o seu escopo por dono, a trava do agendador de recorrências entre duas conexões, e o catálogo global de ativos com o índice único sobre `upper(symbol)` | `tests/integration/test_auth.py`, `test_users.py`, `test_categories.py`, `test_admin_users.py`, `test_balance.py`, `test_recurring_transactions.py`, `test_investments.py` | 124 | sim |
 | **Infraestrutura** | migrations, envelope de erro, health contra o banco real e o `seed-dev` | `tests/integration/test_health.py`, `test_error_envelope.py`, `test_dev_seed.py` | 14 | sim |
 
-Os onze primeiros tipos — 733 dos 868 testes — rodam **sem Docker e sem banco nenhum**. Só o que
+Os treze primeiros tipos — 843 dos 981 testes — rodam **sem Docker e sem banco nenhum**. Só o que
 depende do Postgres de verdade (migrations, dado semeado por migration, `NUMERIC`, índice parcial,
-o `date_trunc` do saldo mensal, o `FOR UPDATE ... SKIP LOCKED` do agendador e o `ON DELETE SET
-NULL` que preserva o aporte de uma posição excluída) sobe o serviço
+o `date_trunc` do saldo mensal, o `FOR UPDATE ... SKIP LOCKED` do agendador, o `ON DELETE SET
+NULL` que preserva o aporte de uma posição excluída e o `UPDATE` em lote que revaloriza posições em
+`NUMERIC`) sobe o serviço
 `db-test`.
 
 As duas matrizes se comparam com o schema OpenAPI da aplicação: **rota nova sem declaração reprova
@@ -41,7 +44,7 @@ criado e destruído a cada teste. Ela existe para que o contrato HTTP — rota, 
 erro, forma da resposta, escopo por dono — possa ser verificado numa máquina sem Docker.
 
 ```bash
-make test-api                                 # os 367 testes, ~30 s, sem Docker nem banco
+make test-api                                 # os 402 testes, ~35 s, sem Docker nem banco
 make test-api k=categorias                    # um recorte; vai direto para o -k do pytest
 .venv/bin/pytest tests/api                    # o mesmo, chamando o pytest na mão
 ```
@@ -51,7 +54,7 @@ cobertura** — um endpoint só conta como coberto quando alguma requisição re
 
 ```
 ------------------------ cobertura de endpoints da API -------------------------
-44 de 44 endpoints cobertos (100%)
+45 de 45 endpoints cobertos (100%)
 ```
 
 Endpoint novo entra nessa lista como lacuna até alguém escrever o teste. O relatório não reprova a
@@ -80,8 +83,8 @@ O banco de teste sobe sozinho. Não existe passo de preparação em nenhum alvo.
 ## Rodar só um tipo
 
 ```bash
-make test-unit                                      # os 366 unitários, ~4 s, sem Docker
-make test-api                                       # os 367 de API, ~30 s, sem Docker
+make test-unit                                      # os 441 unitários, ~5 s, sem Docker
+make test-api                                       # os 402 de API, ~35 s, sem Docker
 make test-integration                               # tudo que exige Postgres
 
 .venv/bin/pytest -m "not integration"               # unitários + API: tudo que dispensa banco

@@ -103,6 +103,37 @@ class Settings(BaseSettings):
     recurring_scheduler_interval_seconds: PositiveInt = 900
     """Intervalo entre rodadas; uma rodada sempre roda na subida."""
 
+    # --- Investimentos (docs/investimentos.md) -----------------------------
+    brapi_token: str = ""
+    """Token da BRAPI: acoes brasileiras. Vazio desliga o provedor — a busca
+    devolve lista vazia e o agendador pula a etapa, em vez de a aplicacao
+    recusar subir. E o que permite rodar a suite e um ambiente sem as chaves."""
+
+    twelve_data_api_key: str = ""
+    """Chave da Twelve Data: acoes americanas, cripto e o cambio USD/BRL."""
+
+    investment_scheduler_enabled: bool = True
+    investment_scheduler_interval_seconds: PositiveInt = 900
+    """15 minutos, como as recorrencias. Uma rodada sempre roda na subida."""
+
+    brapi_max_symbols_per_run: PositiveInt = 15
+    """Requisicoes a BRAPI por rodada. O plano gratuito aceita **um ativo por
+    requisicao** e 20 por minuto; 15 deixa folga para a busca do usuario, que
+    divide o mesmo teto."""
+
+    twelve_data_max_symbols_per_run: PositiveInt = 7
+    """Simbolos cotados por rodada. Um credito cada, mais um do `USD/BRL` — sao
+    8, o teto por minuto do plano gratuito. A 96 rodadas por dia isso da 768
+    creditos, dentro dos 800 diarios."""
+
+    investment_rate_max_age_hours: PositiveInt = 12
+    """Idade a partir da qual um indice do Banco Central e relido. O SGS publica
+    uma vez por dia; reler a cada 15 min seriam 384 requisicoes para o mesmo numero."""
+
+    investment_accrual_batch_size: PositiveInt = 200
+    """Posicoes de renda fixa acruadas por rodada. Nao gasta credito de provedor;
+    o teto existe para a rodada nao segurar uma transacao longa."""
+
     # --- Banco -----------------------------------------------------------
     db_echo: bool = False
     db_pool_size: int = 5

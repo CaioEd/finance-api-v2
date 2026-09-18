@@ -3,9 +3,10 @@
 Medida em **2026-09-18** com `make coverage`, sobre o estado que este commit entrega — a fase 5
 concluída, as receitas e despesas recorrentes (`docs/recorrencias.md`), as duas frentes de
 autenticação (encerramento de sessões e limite de tentativas no login), o contrato de
-`/admin/users` que o painel do front consome, e agora a **parte 1 de investimentos**
-(`docs/investimentos.md`): o domínio, o CRUD das duas metades da carteira, e o aporte e o provento
-que gravam lançamento comum em `transactions`. Não há hash aqui de propósito: o documento vive
+`/admin/users` que o painel do front consome, e agora o **back-end de investimentos**
+(`docs/investimentos.md`): o domínio e o CRUD das duas metades da carteira, o aporte e o provento que
+gravam lançamento comum em `transactions`, os clientes da BRAPI, da Twelve Data e do Banco Central, a
+busca de ativos e o agendador de cotações de 15 minutos. Não há hash aqui de propósito: o documento vive
 dentro do commit que ele descreve, e um hash nesta linha ou é o do commit anterior ou não existe
 ainda. Para saber se envelheceu, compare a tabela de fases do `README.md` com a lista de módulos
 abaixo.
@@ -14,12 +15,12 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **98%** — 3206 linhas executáveis, 71 sem cobertura |
-| Suíte | 868 testes: 366 unitários, 367 de API, 135 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 96% — os 733 testes que rodam sem Docker |
-| Só os unitários | 83% — número de import, não de regra; ver abaixo |
+| **Cobertura total** | **98%** — 3746 linhas executáveis, 74 sem cobertura |
+| Suíte | 981 testes: 441 unitários, 402 de API, 138 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 96% — os 843 testes que rodam sem Docker |
+| Só os unitários | 81% — número de import, não de regra; ver abaixo |
 
-Os 83% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
+Os 81% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
 nova coberta: o teste do aviso de subida em produção (`tests/unit/test_rate_limit.py`) chama
 `create_app`, e montar a aplicação importa todas as rotas, schemas e repositórios — as linhas de
 definição (decorador, classe, assinatura) passam a contar como executadas, embora nenhuma rota rode.
@@ -32,7 +33,7 @@ categorias que a migration semeia, o agrupamento mensal do saldo e a tradução 
 nome. Quem responde pela cobertura é a suíte inteira.
 
 A suíte de API também responde por **quantos endpoints** têm teste, e o número sai no fim de toda
-rodada dela — hoje, 44 de 44. É uma cobertura diferente da de linhas: mede o contrato publicado, não
+rodada dela — hoje, 45 de 45. É uma cobertura diferente da de linhas: mede o contrato publicado, não
 o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 
 > **Ao medir, `concurrency = ["thread", "greenlet"]` não é opcional.** A ponte async do SQLAlchemy
@@ -51,16 +52,16 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `api/routes/balance.py` | 30 | 100% |
 | `api/routes/categories.py` | 35 | 100% |
 | `api/routes/health.py` | 26 | 92% |
-| `api/routes/investments.py` | 51 | 100% |
+| `api/routes/investments.py` | 62 | 100% |
 | `api/routes/recurring_transactions.py` | 34 | 100% |
 | `api/routes/reports.py` | 37 | 100% |
 | `api/routes/transactions.py` | 37 | 100% |
 | `api/routes/users.py` | 28 | 100% |
 | `cli.py` | 89 | 50% |
 | `core/clock.py` | 44 | 100% |
-| `core/config.py` | 111 | 98% |
+| `core/config.py` | 126 | 98% |
 | `core/database.py` | 28 | 96% |
-| `core/errors.py` | 140 | 99% |
+| `core/errors.py` | 143 | 99% |
 | `core/pdf.py` | 192 | 100% |
 | `core/rate_limit.py` | 83 | 100% |
 | `core/scheduler.py` | 33 | 100% |
@@ -69,18 +70,24 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `dependencies/database.py` | 9 | 67% |
 | `dependencies/repositories.py` | 28 | 100% |
 | `dependencies/services.py` | 47 | 100% |
-| `dependencies/state.py` | 24 | 100% |
+| `dependencies/state.py` | 28 | 100% |
+| `jobs/investment_quotes.py` | 164 | 98% |
 | `jobs/recurring_transactions.py` | 23 | 100% |
-| `main.py` | 57 | 100% |
+| `main.py` | 82 | 100% |
 | `models/category.py` | 27 | 93% |
-| `models/investment.py` | 103 | 98% |
+| `models/investment.py` | 115 | 97% |
 | `models/recurring_transaction.py` | 35 | 97% |
 | `models/refresh_token.py` | 19 | 95% |
 | `models/transaction.py` | 36 | 97% |
 | `models/user.py` | 30 | 97% |
+| `providers/base.py` | 55 | 100% |
+| `providers/bcb.py` | 41 | 100% |
+| `providers/brapi.py` | 46 | 100% |
+| `providers/twelve_data.py` | 58 | 100% |
 | `repositories/admin_user_repository.py` | 43 | 100% |
 | `repositories/balance_repository.py` | 37 | 100% |
 | `repositories/category_repository.py` | 34 | 95% |
+| `repositories/investment_quote_repository.py` | 45 | 100% |
 | `repositories/investment_repository.py` | 71 | 100% |
 | `repositories/recurring_transaction_repository.py` | 40 | 100% |
 | `repositories/refresh_token_repository.py` | 18 | 100% |
@@ -90,7 +97,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `schemas/balance.py` | 25 | 100% |
 | `schemas/base.py` | 7 | 100% |
 | `schemas/category.py` | 25 | 100% |
-| `schemas/investment.py` | 186 | 100% |
+| `schemas/investment.py` | 197 | 100% |
 | `schemas/recurring_transaction.py` | 43 | 100% |
 | `schemas/transaction.py` | 62 | 100% |
 | `schemas/user.py` | 57 | 100% |
@@ -98,7 +105,9 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `services/auth_service.py` | 105 | 97% |
 | `services/balance_service.py` | 63 | 100% |
 | `services/category_service.py` | 49 | 100% |
+| `services/fixed_income.py` | 27 | 100% |
 | `services/investment_service.py` | 208 | 100% |
+| `services/market_service.py` | 23 | 100% |
 | `services/recurrence.py` | 25 | 100% |
 | `services/recurring_transaction_service.py` | 103 | 100% |
 | `services/report_service.py` | 102 | 100% |
@@ -106,19 +115,21 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
-52 dos 60 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
+50 dos 68 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
 `auth_service`, tratada abaixo. Os oito módulos das recorrências entram todos em 100%, menos o
 `__repr__` do model (ver "Não são lacunas"). `core/rate_limit.py` também está em 100%, e `main.py`
 chegou lá junto: o middleware de CORS, que nenhum teste montava, agora é exercitado pelo teste que
 confere o `Retry-After` exposto ao front. Os três módulos da fase 5 seguem em 100%, e nenhum
 repositório ficou abaixo de 94%.
 
-**Os quatro módulos de investimentos entram em 100%**, e o único não coberto de `models/investment.py`
-são os dois `__repr__`. Dois trechos foram **apagados** em vez de ganharem teste, e isso é o
-relatório fazendo o trabalho dele: um `as_money` no PATCH que nunca rodava (o tipo `Money` do schema
-já recusa mais de duas casas, e arredondar de novo no serviço seria uma segunda regra para a mesma
-coisa) e um `AssetSearchOut` sem endpoint que o consumisse — ele volta na parte 2, junto da busca de
-ativos. Código sem consumidor não é lacuna de teste: é código a menos.
+**Os módulos de investimentos entram em 100%**, incluindo os três provedores, o agendador e a
+aritmética da renda fixa; o que sobra em `models/investment.py` são os três `__repr__`. Três trechos
+foram **apagados** em vez de ganharem teste, e isso é o relatório fazendo o trabalho dele: um
+`as_money` no PATCH que nunca rodava (o tipo `Money` do schema já recusa mais de duas casas, e
+arredondar de novo no serviço seria uma segunda regra para a mesma coisa), um `AssetSearchOut` sem
+endpoint que o consumisse — que voltou na parte 2, junto da busca — e um `TwelveDataClient.quote`
+escrito para descobrir o nome do ativo, que ninguém chamava: o nome vem da busca, que o usuário já
+usou para escolher o símbolo. Código sem consumidor não é lacuna de teste: é código a menos.
 
 ## O que não está coberto
 
@@ -224,9 +235,29 @@ que nenhuma `relationship` do ORM cobre. Este último é o que garante que exclu
 apaga o aporte que saiu da conta: o dinheiro se moveu de verdade, e apagá-lo para remover um rótulo
 falsificaria o saldo do mês em que aconteceu.
 
-O que ainda **não** tem teste é o que ainda não existe: os clientes HTTP dos provedores externos e o
-agendador de cotações são a parte 2, e entram com os testes deles. `current_value` hoje nasce igual
-ao investido e ninguém o corrige — é verdade e está afirmado, não é lacuna.
+**A parte 2 entra sem lacuna de linha**, e com a divisão que o desenho pede. Os três clientes de
+provedor se testam sobre `httpx.MockTransport` (`tests/unit/test_providers.py`), contra os corpos que
+a BRAPI, a Twelve Data e o SGS **realmente devolvem** — medidos com os tokens do projeto, e não
+imaginados. É a diferença entre provar que o parser lê o formato do provedor e provar que ele lê o
+formato que o autor do teste achou que viria; o que se afirma inclui o que a aplicação *manda*
+(caminho, query string, `Authorization`), porque o token na query string apareceria em log de proxy.
+
+A aritmética da renda fixa é função pura e está em `test_fixed_income.py`: as quatro modalidades
+reduzidas a uma taxa efetiva, e a capitalização por dia cheio. Um teste dela vale registro — acruar
+em duas etapas dá o mesmo total que acruar de uma vez. Sem isso, o patrimônio dependeria de quantas
+vezes o agendador rodou, e um restart no meio do dia mudaria o número na tela de quem estivesse
+olhando.
+
+O agendador inteiro é `tests/api/test_investment_quotes.py`, com os clientes de verdade sobre
+transporte de mentira e o relógio parado. Ele achou um defeito de duble que era quase um defeito de
+código: a Twelve Data devolve `{"price": ...}` cru quando o lote tem **um** símbolo, e a chave por
+símbolo quando tem mais — o cliente já tratava os dois, o duble não, e a rodada com um único ativo em
+dólar não atualizava nada.
+
+Contra Postgres ficaram três coisas que o SQLite não responde: o `UPDATE` em lote que revaloriza
+todas as posições de um ativo em `NUMERIC(24,8)` arredondado a duas casas, a linha única por índice
+do Banco Central, e o `NULLS FIRST` da fila — sem ele, o ativo recém-cadastrado seria o último a ser
+cotado, que é o oposto do que se quer.
 
 A fase 4 entra sem lacuna própria. Os quatro módulos de saldo estão em 100%, e as duas suítes se
 dividem o trabalho como o desenho manda: a unitária (`tests/unit/test_balance_service.py`) cobre a
@@ -252,7 +283,8 @@ comportamento que ninguém olhou.
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
 | `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness |
 | `core/config.py:174` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
-| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py`, `models/recurring_transaction.py:116`, `models/investment.py` (dois) | `__repr__`, texto de depuração |
+| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py`, `models/recurring_transaction.py:116`, `models/investment.py` (três) | `__repr__`, texto de depuração |
+| `jobs/investment_quotes.py:216,224` | guardas que a própria consulta já impede (`accruable_positions` filtra `rate_index` e `applied_on` não nulos). Ficam porque as colunas são nuláveis e o `mypy --strict` as exige |
 
 A primeira linha é o relatório de cobertura fazendo o trabalho dele: apontou código morto, não
 teste faltando. Ou passa a ser usada, ou sai. `models.user.is_admin` saiu desta lista sem ninguém

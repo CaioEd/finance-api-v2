@@ -37,6 +37,7 @@ from pydantic import (
 )
 
 from models.investment import (
+    ASSET_NAME_MAX_LENGTH,
     CLASS_OF_TYPE,
     INVESTMENT_NAME_MAX_LENGTH,
     MONEY_DECIMAL_PLACES,
@@ -406,6 +407,29 @@ class EarningIn(BaseModel):
     category_id: UUID
     occurred_on: date | None = None
     description: Description = ""
+
+
+class AssetSearchOut(BaseModel):
+    """Um ativo achado na busca — ainda não é posição de ninguém.
+
+    Escolher uma linha daqui é preencher o `symbol` de um `POST /investments`.
+    `price` vem quando o provedor o entrega de graça na mesma resposta (é o caso
+    da BRAPI) e é `None` quando saber o preço custaria uma consulta por linha —
+    em cripto, as nove moedas consumiriam o orçamento de um minuto inteiro para
+    um número que ninguém precisa ver antes de escolher a moeda.
+    """
+
+    type: InvestmentType
+    symbol: str
+    name: str = Field(max_length=ASSET_NAME_MAX_LENGTH)
+    currency: str
+    exchange: str | None = None
+    price: Decimal | None = None
+    logo_url: str | None = None
+
+    @field_serializer("price")
+    def _price_as_string(self, price: Decimal | None) -> str | None:
+        return None if price is None else unit_string(price)
 
 
 # ------------------------------------------------------------------- apoio

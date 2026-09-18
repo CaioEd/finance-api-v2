@@ -61,6 +61,8 @@ def settings() -> Settings:
         # Desligado: abriria sessão contra o `Database` que o fixture ainda troca.
         # Os testes chamam `register_due_recurrences` direto.
         recurring_scheduler_enabled=False,
+        # Idem para o de cotações — e ele ainda sairia à rede a cada rodada.
+        investment_scheduler_enabled=False,
     )
 
 

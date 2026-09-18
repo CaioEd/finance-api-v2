@@ -309,7 +309,7 @@ class Investment(TimestampMixin, Base):
     rate_percent: Mapped[Decimal | None] = mapped_column(
         Numeric(RATE_MAX_DIGITS, RATE_DECIMAL_PLACES), nullable=True
     )
-    """Percentual do índice (102 = 102% do CDI) ou taxa anual, se `PREFIXED`."""
+    """O que a taxa significa depende de `rate_index` - ver a tabela em `RateIndex`."""
 
     applied_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     """Data da aplicação: o marco a partir do qual a renda fixa rende."""
@@ -374,3 +374,44 @@ class Investment(TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<Investment {self.name} ({self.type}) R$ {self.current_value}>"
+
+
+class InvestmentRate(TimestampMixin, Base):
+    """A última leitura de um índice do Banco Central, anualizada.
+
+    Uma linha por índice, global como o catálogo de ativos: o CDI é o mesmo para
+    todo mundo. Existe para que o acrual da renda fixa seja aritmética local -
+    quatro chamadas públicas por rodada, e não uma por posição.
+
+    Guardar já anualizado é o que permite a um cálculo só avaliar as quatro
+    modalidades: as séries do SGS vêm em % ao dia útil (CDI, SELIC) ou em % ao
+    mês (IPCA, poupança), e converter na leitura espalharia essa diferença por
+    quem acrua. A conversão mora em `providers.bcb.annualize`.
+    """
+
+    __tablename__ = "investment_rates"
+
+    index: Mapped[RateIndex] = mapped_column(
+        _enum_column(RateIndex, "rate_index", 16), primary_key=True
+    )
+    """Chave primária: não há segunda linha para o mesmo índice, e o `UPSERT` da
+    rodada não precisa de id sintético para saber o que substituir."""
+
+    annual_percent: Mapped[Decimal] = mapped_column(
+        Numeric(RATE_MAX_DIGITS, RATE_DECIMAL_PLACES), nullable=False
+    )
+    """A taxa ao ano, em porcento: `13.6500` para 13,65% a.a."""
+
+    reference_date: Mapped[date] = mapped_column(Date, nullable=False)
+    """O dia a que a leitura se refere - que não é o dia em que ela foi buscada.
+
+    O SGS publica com atraso, e um CDI de ontem é dado correto. Confundir os
+    dois faria a tela dizer "atualizado agora" sobre um número de três dias
+    atrás, que é justamente o que o usuário precisa saber.
+    """
+
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    """Quando a rodada leu. É o que decide se vale a pena ler de novo."""
+
+    def __repr__(self) -> str:
+        return f"<InvestmentRate {self.index} {self.annual_percent}% a.a.>"

@@ -16,13 +16,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
+from core.errors import NotSearchableInvestmentTypeError
 from dependencies.auth import get_current_user
 from dependencies.services import get_investment_service
-from models.investment import InvestmentClass, InvestmentType
+from dependencies.state import get_market_service
+from models.investment import VARIABLE_INCOME_TYPES, InvestmentClass, InvestmentType
 from models.user import User
 from repositories.investment_repository import InvestmentFilters
 from schemas.investment import (
     AllocationOut,
+    AssetSearchOut,
     ContributionIn,
     EarningIn,
     InvestmentCreateIn,
@@ -34,6 +37,7 @@ from schemas.investment import (
 )
 from schemas.transaction import TransactionOut
 from services.investment_service import Allocation, InvestmentService, Movement
+from services.market_service import SEARCH_LIMIT, MarketService
 
 router = APIRouter(
     prefix="/investments",
@@ -50,6 +54,10 @@ BAD_FIELDS: Responses = {422: {"description": "Campos incompatíveis com o tipo 
 BAD_CATEGORY: Responses = {
     422: {"description": "Categoria inexistente, de outro usuário ou do tipo errado"}
 }
+NOT_SEARCHABLE: Responses = {
+    422: {"description": "Tipo de renda fixa: CDB e Tesouro não têm símbolo a pesquisar"}
+}
+PROVIDER_DOWN: Responses = {503: {"description": "Provedor de cotações indisponível"}}
 
 
 @router.get("", summary="Lista os investimentos do próprio usuário")
@@ -115,6 +123,45 @@ async def read_summary(
         by_type=[_allocation_out(share) for share in summary.by_type],
         value_updated_at=summary.value_updated_at,
     )
+
+
+@router.get(
+    "/assets",
+    summary="Pesquisa ativos de renda variável no provedor do tipo escolhido",
+    responses=NOT_SEARCHABLE | PROVIDER_DOWN,
+)
+async def search_assets(
+    _: User = Depends(get_current_user),
+    market: MarketService = Depends(get_market_service),
+    investment_type: InvestmentType = Query(
+        alias="type", description="Só os três de renda variável"
+    ),
+    query: str = Query(
+        "", max_length=60, description="Código ou nome; vazio lista as criptomoedas"
+    ),
+    limit: int = Query(SEARCH_LIMIT, ge=1, le=25),
+) -> list[AssetSearchOut]:
+    """O que se escolhe aqui é o `symbol` de um `POST /investments`.
+
+    Cripto é lista fechada de nove moedas e não consulta provedor nenhum; ação
+    brasileira vai à BRAPI e americana à Twelve Data. Provedor sem credencial
+    configurada devolve lista vazia, e não erro.
+    """
+    if investment_type not in VARIABLE_INCOME_TYPES:
+        raise NotSearchableInvestmentTypeError()
+    hits = await market.search_assets(investment_type, query, limit=limit)
+    return [
+        AssetSearchOut(
+            type=investment_type,
+            symbol=hit.symbol,
+            name=hit.name,
+            currency=hit.currency,
+            exchange=hit.exchange,
+            price=hit.price,
+            logo_url=hit.logo_url,
+        )
+        for hit in hits
+    ]
 
 
 @router.get("/{investment_id}", summary="Detalha um investimento", responses=NOT_FOUND)

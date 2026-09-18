@@ -85,6 +85,9 @@ NOT_CRUD: set[tuple[str, str]] = {
     # dois criam é lançamento, e esse tem o CRUD dele em `/transactions`.
     ("POST", "/api/v1/investments/{investment_id}/contributions"),
     ("POST", "/api/v1/investments/{investment_id}/earnings"),
+    # Busca de ativos: consulta ao provedor externo, não recurso guardado. Não
+    # há o que criar nem excluir — ver `test_investment_assets.py`.
+    ("GET", "/api/v1/investments/assets"),
 }
 
 

@@ -18,7 +18,7 @@ recorrências mensais, os saldos agregados e a exportação em PDF de todos eles
 | 5 | Relatório em PDF | concluída |
 | 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários e limite de tentativas no login entregues |
 | — | Receitas e despesas recorrentes, com agendador em segundo plano | concluída |
-| — | Investimentos: renda fixa e variável, cotação externa e agendador de 15 min | em andamento |
+| — | Investimentos: renda fixa e variável, cotação externa e agendador de 15 min | back-end concluído |
 
 ## Tech stack e requisitos
 
@@ -209,6 +209,7 @@ Tudo sob `/api/v1`, sem barra final. Autenticação por `Authorization: Bearer <
 | PATCH | `/recurring-transactions/{id}` | Muda valor, categoria, dia; pausa e retoma | autenticado |
 | DELETE | `/recurring-transactions/{id}` | Exclui a regra; o que ela já lançou fica | autenticado |
 | GET | `/investments` | Lista as posições próprias (`?class=&type=`), da maior para a menor | autenticado |
+| GET | `/investments/assets` | Pesquisa ativos no provedor do `?type=` (cripto é lista fechada) | autenticado |
 | POST | `/investments` | Cadastra uma posição de renda fixa ou variável; **não lança nada** | autenticado |
 | GET | `/investments/summary` | Patrimônio, lucro e alocação por classe e por tipo | autenticado |
 | GET | `/investments/{id}` | Detalha uma posição própria | autenticado |
