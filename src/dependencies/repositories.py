@@ -14,6 +14,7 @@ from dependencies.database import get_session
 from repositories.admin_user_repository import AdminUserRepository
 from repositories.balance_repository import BalanceRepository
 from repositories.category_repository import CategoryRepository
+from repositories.investment_repository import InvestmentRepository
 from repositories.recurring_transaction_repository import RecurringTransactionRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.transaction_repository import TransactionRepository
@@ -31,6 +32,12 @@ def get_category_repository(session: AsyncSession = Depends(get_session)) -> Cat
 def get_balance_repository(session: AsyncSession = Depends(get_session)) -> BalanceRepository:
     """Só agrega. Nenhuma rota de saldo alcança lançamento a lançamento por aqui."""
     return BalanceRepository(session)
+
+
+def get_investment_repository(session: AsyncSession = Depends(get_session)) -> InvestmentRepository:
+    """Traz junto o catálogo global de ativos: as duas metades vivem na mesma
+    unidade de trabalho, e cadastrar uma posição pode criar o ativo dela."""
+    return InvestmentRepository(session)
 
 
 def get_transaction_repository(

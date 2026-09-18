@@ -173,6 +173,41 @@ class RecurringTransactionNotFoundError(NotFoundError):
     message = "Recorrência não encontrada."
 
 
+class InvalidCategoryKindError(UnprocessableError):
+    code = "invalid_category_kind"
+    message = "A categoria escolhida é do tipo errado para este lançamento."
+    # Aporte é despesa e provento é receita — o `kind` vem da categoria (ver
+    # `models.transaction`), então escolher uma categoria de receita para um
+    # aporte faria o dinheiro investido *entrar* no saldo em vez de sair.
+    # 422 e não 404: a categoria existe e é visível; o que não serve é a
+    # combinação dela com esta rota.
+
+
+class InvestmentNotFoundError(NotFoundError):
+    code = "investment_not_found"
+    message = "Investimento não encontrado."
+
+
+class InvalidInvestmentAssetError(UnprocessableError):
+    code = "invalid_investment_asset"
+    message = "Ativo inexistente ou indisponível no provedor de cotações."
+    # 422 como `InvalidCategoryError`: o recurso da requisição é a posição, e
+    # ela não é o que está faltando.
+
+
+class InvalidInvestmentFieldsError(UnprocessableError):
+    code = "invalid_investment_fields"
+    message = "Campos incompatíveis com o tipo do investimento."
+    # Renda fixa não tem quantidade nem preço médio, e renda variável não tem
+    # índice nem vencimento. Gravar em silêncio o que não se aplica deixaria a
+    # posição com metade dos campos da outra metade da tabela.
+
+    def __init__(self, fields: list[str]) -> None:
+        super().__init__(
+            details=[{"field": field, "message": "não se aplica a este tipo"} for field in fields]
+        )
+
+
 class InvalidPeriodError(UnprocessableError):
     code = "invalid_period"
     message = "O início do período não pode ser posterior ao fim."

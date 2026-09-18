@@ -22,6 +22,7 @@ from dependencies.repositories import (
     get_admin_user_repository,
     get_balance_repository,
     get_category_repository,
+    get_investment_repository,
     get_recurring_transaction_repository,
     get_refresh_token_repository,
     get_transaction_repository,
@@ -37,6 +38,7 @@ from dependencies.state import (
 from repositories.admin_user_repository import AdminUserRepository
 from repositories.balance_repository import BalanceRepository
 from repositories.category_repository import CategoryRepository
+from repositories.investment_repository import InvestmentRepository
 from repositories.recurring_transaction_repository import RecurringTransactionRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.transaction_repository import TransactionRepository
@@ -45,6 +47,7 @@ from services.admin_user_service import AdminUserService
 from services.auth_service import AuthService
 from services.balance_service import BalanceService
 from services.category_service import CategoryService
+from services.investment_service import InvestmentService
 from services.recurring_transaction_service import RecurringTransactionService
 from services.report_service import ReportService
 from services.transaction_service import TransactionService
@@ -124,6 +127,27 @@ def get_recurring_transaction_service(
         recurrences=recurrences,
         transactions=transactions,
         categories=categories,
+        clock=clock,
+    )
+
+
+def get_investment_service(
+    session: AsyncSession = Depends(get_session),
+    investments: InvestmentRepository = Depends(get_investment_repository),
+    categories: CategoryRepository = Depends(get_category_repository),
+    transactions: TransactionRepository = Depends(get_transaction_repository),
+    clock: Clock = Depends(get_clock),
+) -> InvestmentService:
+    """Os lançamentos entram como `TransactionSink`: aporte e provento só criam.
+
+    O aporte grava a despesa e a posição no mesmo commit — por isso a sessão é
+    a mesma, e não uma chamada ao serviço de lançamentos.
+    """
+    return InvestmentService(
+        unit_of_work=session,
+        investments=investments,
+        categories=categories,
+        transactions=transactions,
         clock=clock,
     )
 

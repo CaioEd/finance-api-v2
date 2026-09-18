@@ -1,39 +1,38 @@
 # Cobertura de testes
 
-Medida em **2026-09-17** com `make coverage`, sobre o estado que este commit entrega — a fase 5
-concluída, as receitas e despesas recorrentes (`docs/recorrencias.md`), mais duas frentes de
-autenticação. O encerramento de sessões: sair de todos os
-dispositivos (`POST /users/me/logout-all`), a desativação pelo admin revogando os refresh tokens, e
-`tests/api/test_sessions.py` fixando quanto dura cada token e o que encerra cada sessão. E o limite
-de tentativas no login (`core/rate_limit.py`, com o slowapi confinado a ele, e a regra em
-`AuthService.login`). Por último, `tests/api/test_admin_users.py`: o contrato de `/admin/users` que
-o painel de administração do front passou a consumir. Não há hash aqui de propósito: o documento vive dentro do commit que ele descreve, e um
-hash nesta linha ou é o do commit anterior ou não existe ainda. Para saber se envelheceu, compare a
-tabela de fases do `README.md` com a lista de módulos abaixo.
+Medida em **2026-09-18** com `make coverage`, sobre o estado que este commit entrega — a fase 5
+concluída, as receitas e despesas recorrentes (`docs/recorrencias.md`), as duas frentes de
+autenticação (encerramento de sessões e limite de tentativas no login), o contrato de
+`/admin/users` que o painel do front consome, e agora a **parte 1 de investimentos**
+(`docs/investimentos.md`): o domínio, o CRUD das duas metades da carteira, e o aporte e o provento
+que gravam lançamento comum em `transactions`. Não há hash aqui de propósito: o documento vive
+dentro do commit que ele descreve, e um hash nesta linha ou é o do commit anterior ou não existe
+ainda. Para saber se envelheceu, compare a tabela de fases do `README.md` com a lista de módulos
+abaixo.
 
 Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `testes.md`.
 
 | | |
 |---|---|
-| **Cobertura total** | **97%** — 2561 linhas executáveis, 69 sem cobertura |
-| Suíte | 746 testes: 325 unitários, 292 de API, 129 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 95% — os 617 testes que rodam sem Docker |
-| Só os unitários | 81% — número de import, não de regra; ver abaixo |
+| **Cobertura total** | **98%** — 3206 linhas executáveis, 71 sem cobertura |
+| Suíte | 868 testes: 366 unitários, 367 de API, 135 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 96% — os 733 testes que rodam sem Docker |
+| Só os unitários | 83% — número de import, não de regra; ver abaixo |
 
-Os 81% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
+Os 83% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
 nova coberta: o teste do aviso de subida em produção (`tests/unit/test_rate_limit.py`) chama
 `create_app`, e montar a aplicação importa todas as rotas, schemas e repositórios — as linhas de
 definição (decorador, classe, assinatura) passam a contar como executadas, embora nenhuma rota rode.
 O que os unitários de fato exercitam continua sendo relógio, configuração, criptografia, a regra dos
 serviços, o desenho do PDF, o limite de tentativas e agora o calendário das recorrências e o laço do
 agendador; rota, repositório e sessão precisam da
-aplicação de pé, e é a suíte de API que os alcança, daí os 94% sem nenhum banco externo. Os três
+aplicação de pé, e é a suíte de API que os alcança, daí os 96% sem nenhum banco externo. Os dois
 pontos que faltam para o total são o que só o Postgres de verdade exercita: migrations, as
 categorias que a migration semeia, o agrupamento mensal do saldo e a tradução de constraint pelo
 nome. Quem responde pela cobertura é a suíte inteira.
 
 A suíte de API também responde por **quantos endpoints** têm teste, e o número sai no fim de toda
-rodada dela — hoje, 36 de 36. É uma cobertura diferente da de linhas: mede o contrato publicado, não
+rodada dela — hoje, 44 de 44. É uma cobertura diferente da de linhas: mede o contrato publicado, não
 o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 
 > **Ao medir, `concurrency = ["thread", "greenlet"]` não é opcional.** A ponte async do SQLAlchemy
@@ -46,12 +45,13 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 
 | Módulo (`src/`) | Linhas | Cobertura |
 |---|---|---|
-| `api/router.py` | 12 | 100% |
+| `api/router.py` | 13 | 100% |
 | `api/routes/admin_users.py` | 26 | 100% |
 | `api/routes/auth.py` | 23 | 100% |
 | `api/routes/balance.py` | 30 | 100% |
 | `api/routes/categories.py` | 35 | 100% |
 | `api/routes/health.py` | 26 | 92% |
+| `api/routes/investments.py` | 51 | 100% |
 | `api/routes/recurring_transactions.py` | 34 | 100% |
 | `api/routes/reports.py` | 37 | 100% |
 | `api/routes/transactions.py` | 37 | 100% |
@@ -60,26 +60,28 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `core/clock.py` | 44 | 100% |
 | `core/config.py` | 111 | 98% |
 | `core/database.py` | 28 | 96% |
-| `core/errors.py` | 126 | 98% |
+| `core/errors.py` | 140 | 99% |
 | `core/pdf.py` | 192 | 100% |
 | `core/rate_limit.py` | 83 | 100% |
 | `core/scheduler.py` | 33 | 100% |
 | `core/security.py` | 72 | 95% |
 | `dependencies/auth.py` | 27 | 100% |
 | `dependencies/database.py` | 9 | 67% |
-| `dependencies/repositories.py` | 25 | 100% |
-| `dependencies/services.py` | 43 | 100% |
+| `dependencies/repositories.py` | 28 | 100% |
+| `dependencies/services.py` | 47 | 100% |
 | `dependencies/state.py` | 24 | 100% |
 | `jobs/recurring_transactions.py` | 23 | 100% |
 | `main.py` | 57 | 100% |
 | `models/category.py` | 27 | 93% |
+| `models/investment.py` | 103 | 98% |
 | `models/recurring_transaction.py` | 35 | 97% |
 | `models/refresh_token.py` | 19 | 95% |
-| `models/transaction.py` | 34 | 97% |
+| `models/transaction.py` | 36 | 97% |
 | `models/user.py` | 30 | 97% |
 | `repositories/admin_user_repository.py` | 43 | 100% |
 | `repositories/balance_repository.py` | 37 | 100% |
 | `repositories/category_repository.py` | 34 | 95% |
+| `repositories/investment_repository.py` | 71 | 100% |
 | `repositories/recurring_transaction_repository.py` | 40 | 100% |
 | `repositories/refresh_token_repository.py` | 18 | 100% |
 | `repositories/transaction_repository.py` | 57 | 97% |
@@ -88,13 +90,15 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `schemas/balance.py` | 25 | 100% |
 | `schemas/base.py` | 7 | 100% |
 | `schemas/category.py` | 25 | 100% |
+| `schemas/investment.py` | 186 | 100% |
 | `schemas/recurring_transaction.py` | 43 | 100% |
-| `schemas/transaction.py` | 60 | 100% |
+| `schemas/transaction.py` | 62 | 100% |
 | `schemas/user.py` | 57 | 100% |
 | `services/admin_user_service.py` | 65 | 100% |
 | `services/auth_service.py` | 105 | 97% |
 | `services/balance_service.py` | 63 | 100% |
 | `services/category_service.py` | 49 | 100% |
+| `services/investment_service.py` | 208 | 100% |
 | `services/recurrence.py` | 25 | 100% |
 | `services/recurring_transaction_service.py` | 103 | 100% |
 | `services/report_service.py` | 102 | 100% |
@@ -102,12 +106,19 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
-39 dos 55 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
+52 dos 60 módulos estão em 100%, entre eles `services/` e `schemas/` inteiros — com a exceção do
 `auth_service`, tratada abaixo. Os oito módulos das recorrências entram todos em 100%, menos o
 `__repr__` do model (ver "Não são lacunas"). `core/rate_limit.py` também está em 100%, e `main.py`
 chegou lá junto: o middleware de CORS, que nenhum teste montava, agora é exercitado pelo teste que
 confere o `Retry-After` exposto ao front. Os três módulos da fase 5 seguem em 100%, e nenhum
 repositório ficou abaixo de 94%.
+
+**Os quatro módulos de investimentos entram em 100%**, e o único não coberto de `models/investment.py`
+são os dois `__repr__`. Dois trechos foram **apagados** em vez de ganharem teste, e isso é o
+relatório fazendo o trabalho dele: um `as_money` no PATCH que nunca rodava (o tipo `Money` do schema
+já recusa mais de duas casas, e arredondar de novo no serviço seria uma segunda regra para a mesma
+coisa) e um `AssetSearchOut` sem endpoint que o consumisse — ele volta na parte 2, junto da busca de
+ativos. Código sem consumidor não é lacuna de teste: é código a menos.
 
 ## O que não está coberto
 
@@ -198,6 +209,25 @@ Relatório não ganhou teste de integração, e é decisão: ele não escreve SQ
 as dos serviços de lançamentos e de saldos, que `tests/integration/` já cobre contra Postgres — e a
 fiação que o prende a elas está em `dependencies/services.py`, em 100%.
 
+**A parte 1 de investimentos entra sem lacuna de linha**, com a divisão de trabalho de sempre. A
+regra — o preço médio ponderado, o que cada metade da tabela aceita, o `kind` da categoria que um
+aporte exige — está em `tests/unit/test_investment_service.py`, com dublês; a fronteira do contrato
+(qual campo cada `type` torna obrigatório, o símbolo em maiúsculo, a quantidade normalizada sem
+notação científica) em `test_investment_schemas.py`; a travessia HTTP, inclusive o aporte aparecendo
+no extrato e no saldo, em `tests/api/test_investments.py`.
+
+Três coisas foram para `tests/integration/` porque **só o Postgres as responde**, e não por
+precaução: o schema nasce das migrations e não de `Base.metadata`; o índice único funcional sobre
+`upper(symbol)` — é ele que impede o catálogo de guardar "petr4" e "PETR4" como dois ativos, com
+duas cotações divergentes na mesma tela; e o `ON DELETE SET NULL` de `transactions.investment_id`,
+que nenhuma `relationship` do ORM cobre. Este último é o que garante que excluir uma posição **não**
+apaga o aporte que saiu da conta: o dinheiro se moveu de verdade, e apagá-lo para remover um rótulo
+falsificaria o saldo do mês em que aconteceu.
+
+O que ainda **não** tem teste é o que ainda não existe: os clientes HTTP dos provedores externos e o
+agendador de cotações são a parte 2, e entram com os testes deles. `current_value` hoje nasce igual
+ao investido e ninguém o corrige — é verdade e está afirmado, não é lacuna.
+
 A fase 4 entra sem lacuna própria. Os quatro módulos de saldo estão em 100%, e as duas suítes se
 dividem o trabalho como o desenho manda: a unitária (`tests/unit/test_balance_service.py`) cobre a
 resolução da janela, o preenchimento dos meses vazios e as duas recusas; a de integração
@@ -222,7 +252,7 @@ comportamento que ninguém olhou.
 | `dependencies/database.py:19-21` | `get_session` é substituído por `dependency_overrides` em todo teste, para cada um rodar numa transação com rollback |
 | `core/database.py:86` | property `engine`, alcançada só pelo `ping()` do readiness |
 | `core/config.py:174` | `get_settings()` com `lru_cache`; a suíte constrói `Settings` explicitamente, de propósito |
-| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py:131`, `models/recurring_transaction.py:116` | `__repr__`, texto de depuração |
+| `models/user.py:88`, `models/category.py:110-111`, `models/transaction.py`, `models/recurring_transaction.py:116`, `models/investment.py` (dois) | `__repr__`, texto de depuração |
 
 A primeira linha é o relatório de cobertura fazendo o trabalho dele: apontou código morto, não
 teste faltando. Ou passa a ser usada, ou sai. `models.user.is_admin` saiu desta lista sem ninguém

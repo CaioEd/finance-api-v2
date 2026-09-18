@@ -66,6 +66,7 @@ from core.database import NAMING_CONVENTION, Base, Database
 # Importados só para registrar as tabelas no metadata, como em `alembic/env.py`.
 # Model novo em `models/` precisa entrar nesta lista, ou a tabela não é criada.
 from models import category as _category  # noqa: F401
+from models import investment as _investment  # noqa: F401
 from models import recurring_transaction as _recurring_transaction  # noqa: F401
 from models import refresh_token as _refresh_token  # noqa: F401
 from models import transaction as _transaction  # noqa: F401
