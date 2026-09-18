@@ -15,9 +15,9 @@ Para **onde** cada tipo de teste mora, o que ele prova e quando rodá-lo, veja `
 
 | | |
 |---|---|
-| **Cobertura total** | **98%** — 3746 linhas executáveis, 74 sem cobertura |
-| Suíte | 981 testes: 441 unitários, 402 de API, 138 de integração (2 pulados) |
-| Sem Postgres (`-m "not integration"`) | 96% — os 843 testes que rodam sem Docker |
+| **Cobertura total** | **98%** — 3756 linhas executáveis, 74 sem cobertura |
+| Suíte | 987 testes: 447 unitários, 402 de API, 138 de integração (2 pulados) |
+| Sem Postgres (`-m "not integration"`) | 96% — os 849 testes que rodam sem Docker |
 | Só os unitários | 81% — número de import, não de regra; ver abaixo |
 
 Os 81% dos unitários pedem leitura cuidadosa. Até a fase 5 eram 55%, e o salto não veio de regra
@@ -81,7 +81,7 @@ o código executado, e é a que denuncia rota nova sem teste. Ver `testes.md`.
 | `models/transaction.py` | 36 | 97% |
 | `models/user.py` | 30 | 97% |
 | `providers/base.py` | 55 | 100% |
-| `providers/bcb.py` | 41 | 100% |
+| `providers/bcb.py` | 51 | 100% |
 | `providers/brapi.py` | 46 | 100% |
 | `providers/twelve_data.py` | 58 | 100% |
 | `repositories/admin_user_repository.py` | 43 | 100% |
@@ -241,6 +241,13 @@ a BRAPI, a Twelve Data e o SGS **realmente devolvem** — medidos com os tokens 
 imaginados. É a diferença entre provar que o parser lê o formato do provedor e provar que ele lê o
 formato que o autor do teste achou que viria; o que se afirma inclui o que a aplicação *manda*
 (caminho, query string, `Authorization`), porque o token na query string apareceria em log de proxy.
+
+Rodar o agendador contra os provedores de verdade achou um defeito que nenhum teste de duble
+pegaria, porque ele estava na **escolha da conta**, não no código: o IPCA anualizado a partir da
+última leitura mensal dava `-3,77% a.a.`, porque agosto/2026 fechou em deflação — e um Tesouro
+IPCA+5,8% passava a render menos que a poupança. A série mensal passou a valer pelo acumulado de
+doze meses (`+4,22% a.a.`, o número que o mercado cita), e o caso virou teste em
+`test_providers.py`. É o argumento de medir contra a API real em vez de contra a documentação dela.
 
 A aritmética da renda fixa é função pura e está em `test_fixed_income.py`: as quatro modalidades
 reduzidas a uma taxa efetiva, e a capitalização por dia cheio. Um teste dela vale registro — acruar

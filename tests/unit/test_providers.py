@@ -23,7 +23,7 @@ import pytest
 
 from models.investment import RateIndex
 from providers.base import MarketDataUnavailableError, to_decimal
-from providers.bcb import BcbClient, annualize
+from providers.bcb import BcbClient, accumulate_monthly, annualize_daily
 from providers.brapi import BrapiClient
 from providers.twelve_data import (
     CRYPTOCURRENCIES,
@@ -118,6 +118,24 @@ TWELVE_SEARCH = {
 }
 
 BCB_CDI = [{"data": "17/09/2026", "valor": "0.050788"}]
+
+# Série mensal: o SGS devolve as doze leituras pedidas, da mais antiga para a
+# mais recente. Os valores são os do IPCA de 2026 — e agosto fechou em deflação,
+# que é justamente o caso que quebrava a estimativa antiga.
+BCB_IPCA_12 = [
+    {"data": "01/09/2025", "valor": "0.44"},
+    {"data": "01/10/2025", "valor": "0.56"},
+    {"data": "01/11/2025", "valor": "0.39"},
+    {"data": "01/12/2025", "valor": "0.52"},
+    {"data": "01/01/2026", "valor": "0.42"},
+    {"data": "01/02/2026", "valor": "0.83"},
+    {"data": "01/03/2026", "valor": "0.88"},
+    {"data": "01/04/2026", "valor": "0.67"},
+    {"data": "01/05/2026", "valor": "0.58"},
+    {"data": "01/06/2026", "valor": "0.16"},
+    {"data": "01/07/2026", "valor": "0.07"},
+    {"data": "01/08/2026", "valor": "-0.32"},
+]
 BCB_SAVINGS = [{"data": "17/09/2026", "dataFim": "17/10/2026", "valor": "0.6695"}]
 
 
@@ -330,15 +348,55 @@ async def test_the_daily_series_is_annualised_over_business_days() -> None:
     assert "bcdata.sgs.12" in sent[0].url.path
 
 
-async def test_the_monthly_series_is_annualised_over_twelve_months() -> None:
-    """`0,6695% ao mês` vira ~8,3% ao ano — não 8,034% da soma simples."""
-    http, sent = client_returning(BCB_SAVINGS)
+async def test_a_monthly_series_is_the_accumulated_of_twelve_months() -> None:
+    """O acumulado do ano, e não a última leitura elevada a 12.
+
+    A soma dos doze meses de 2026 dá ~5,3%, que é a inflação do período. Um mês
+    de deflação no fim da janela não pode virar "-3,8% ao ano" — e viraria, se a
+    conta fosse pela última leitura.
+    """
+    http, sent = client_returning(BCB_IPCA_12)
+    async with http:
+        rate = await BcbClient(http=http).latest(RateIndex.IPCA)
+
+    assert rate is not None
+    assert Decimal("5") < rate.annual_percent < Decimal("6")
+    assert "bcdata.sgs.433" in sent[0].url.path
+    # A referência é a leitura mais recente, e não o começo da janela.
+    assert rate.reference_date == date(2026, 8, 1)
+
+
+async def test_a_monthly_series_asks_for_the_whole_year_at_once() -> None:
+    """Doze leituras não custam mais que uma: o SGS é público e responde tudo junto."""
+    http, sent = client_returning(BCB_IPCA_12)
+    async with http:
+        await BcbClient(http=http).latest(RateIndex.IPCA)
+
+    assert sent[0].url.path.endswith("/ultimos/12")
+
+
+async def test_a_daily_series_asks_for_one_reading_only() -> None:
+    """A taxa diária é estável: a última basta, e capitalizá-la por 252 dá o ano."""
+    http, sent = client_returning(BCB_CDI)
+    async with http:
+        await BcbClient(http=http).latest(RateIndex.CDI)
+
+    assert sent[0].url.path.endswith("/ultimos/1")
+
+
+async def test_a_partial_monthly_window_is_projected_to_a_full_year() -> None:
+    """Menos de doze meses não pode virar uma taxa anual menor do que é.
+
+    `1%` ao mês por seis meses é ~6,15% no período e ~12,7% ao ano; devolver os
+    6,15% como taxa anual faria a posição render metade do que rende.
+    """
+    six = [{"data": f"01/0{month}/2026", "valor": "1.0"} for month in range(1, 7)]
+    http, _ = client_returning(six)
     async with http:
         rate = await BcbClient(http=http).latest(RateIndex.SAVINGS)
 
     assert rate is not None
-    assert Decimal("8") < rate.annual_percent < Decimal("9")
-    assert "bcdata.sgs.195" in sent[0].url.path
+    assert Decimal("12") < rate.annual_percent < Decimal("13")
 
 
 async def test_the_bcb_needs_no_credential() -> None:
@@ -360,9 +418,29 @@ def test_compounding_beats_multiplying_the_daily_rate() -> None:
     """Somar a taxa diária 252 vezes daria um número menor e errado — juro compõe."""
     daily = Decimal("0.050788")
 
-    compounded = annualize(daily, RateIndex.CDI)
+    compounded = annualize_daily(daily)
 
     assert compounded > daily * 252
+
+
+def test_a_deflationary_month_does_not_erase_a_year_of_inflation() -> None:
+    """O caso que motivou a mudança, isolado da rede.
+
+    Onze meses de 0,5% e um de -0,32% somam ~5,2% no ano. Pela última leitura
+    elevada a 12, o mesmo ano viraria -3,8% — e um Tesouro IPCA+5,8% passaria a
+    render menos que a poupança.
+    """
+    values = [Decimal("0.5")] * 11 + [Decimal("-0.32")]
+
+    accumulated = accumulate_monthly(values)
+
+    assert Decimal("5") < accumulated < Decimal("6")
+    assert accumulated > annualize_monthly_naively(values[-1])
+
+
+def annualize_monthly_naively(value: Decimal) -> Decimal:
+    """A conta antiga, guardada só para o teste acima mostrar a diferença."""
+    return ((Decimal(1) + value / 100) ** 12 - 1) * 100
 
 
 async def test_a_rate_for_a_prefixed_contract_is_a_programming_error() -> None:
@@ -496,6 +574,7 @@ async def test_twelve_data_search_survives_an_unexpected_body(payload: Any) -> N
     "payload",
     [
         pytest.param({"erro": "manutenção"}, id="objeto-em-vez-de-lista"),
+        pytest.param(["texto solto"], id="linha-que-não-é-objeto"),
         pytest.param([{"valor": "0.05"}], id="sem-data"),
         pytest.param([{"data": "17/09/2026"}], id="sem-valor"),
         pytest.param([{"data": "2026-09-17", "valor": "0.05"}], id="data-em-iso"),
@@ -506,6 +585,21 @@ async def test_the_bcb_treats_an_unexpected_body_as_no_rate(payload: Any) -> Non
     http, _ = client_returning(payload)
     async with http:
         assert await BcbClient(http=http).latest(RateIndex.CDI) is None
+
+
+async def test_a_monthly_window_with_a_broken_row_uses_the_readable_ones() -> None:
+    """Uma leitura ilegível no meio da janela não pode zerar o índice do ano.
+
+    Doze meses viram onze, e o expoente `12/n` projeta o que sobrou — melhor do
+    que devolver `None` e deixar a renda fixa inteira sem render.
+    """
+    with_a_hole = [*BCB_IPCA_12[:5], {"data": "01/02/2026"}, *BCB_IPCA_12[6:]]
+    http, _ = client_returning(with_a_hole)
+    async with http:
+        rate = await BcbClient(http=http).latest(RateIndex.IPCA)
+
+    assert rate is not None
+    assert Decimal("4") < rate.annual_percent < Decimal("6")
 
 
 @pytest.mark.parametrize(

@@ -10,7 +10,7 @@ agendador, `recorrencias.md`.
 
 | Tipo | O que cobre | Onde | Testes | Postgres |
 |---|---|---|---|---|
-| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso. Inclui o calendário das recorrências, o laço do agendador, o preço médio ponderado dos aportes, o acrual da renda fixa e os clientes dos provedores de cotação (sobre `httpx.MockTransport`, contra os corpos que a BRAPI, a Twelve Data e o Banco Central realmente devolvem) | `tests/unit/` | 441 | não |
+| **Unitários** | regra de negócio e contrato de entrada. Não abrem conexão — serviço se testa com repositório falso. Inclui o calendário das recorrências, o laço do agendador, o preço médio ponderado dos aportes, o acrual da renda fixa e os clientes dos provedores de cotação (sobre `httpx.MockTransport`, contra os corpos que a BRAPI, a Twelve Data e o Banco Central realmente devolvem) | `tests/unit/` | 447 | não |
 | **Matriz de autorização** | **quem** alcança cada rota: anônimo, autenticado e admin × rota pública, protegida e de admin | `tests/api/test_authorization_matrix.py` | 162 | não |
 | **Matriz de CRUD** | **o que** cada rota faz: criar → ler → listar → atualizar → excluir, os 404/422 e o PATCH parcial | `tests/api/test_crud_contract.py` | 95 | não |
 | **Tradução do SQLite** | o agrupamento mensal do saldo, única consulta que depende de uma função traduzida à mão | `tests/api/test_balance.py` | 4 | não |
@@ -26,7 +26,7 @@ agendador, `recorrencias.md`.
 | **Contrato de domínio** | o que só aquele recurso faz: rotação de refresh, categoria do sistema vs. do usuário, o saldo agregado e o seu escopo por dono, a trava do agendador de recorrências entre duas conexões, e o catálogo global de ativos com o índice único sobre `upper(symbol)` | `tests/integration/test_auth.py`, `test_users.py`, `test_categories.py`, `test_admin_users.py`, `test_balance.py`, `test_recurring_transactions.py`, `test_investments.py` | 124 | sim |
 | **Infraestrutura** | migrations, envelope de erro, health contra o banco real e o `seed-dev` | `tests/integration/test_health.py`, `test_error_envelope.py`, `test_dev_seed.py` | 14 | sim |
 
-Os treze primeiros tipos — 843 dos 981 testes — rodam **sem Docker e sem banco nenhum**. Só o que
+Os treze primeiros tipos — 849 dos 987 testes — rodam **sem Docker e sem banco nenhum**. Só o que
 depende do Postgres de verdade (migrations, dado semeado por migration, `NUMERIC`, índice parcial,
 o `date_trunc` do saldo mensal, o `FOR UPDATE ... SKIP LOCKED` do agendador, o `ON DELETE SET
 NULL` que preserva o aporte de uma posição excluída e o `UPDATE` em lote que revaloriza posições em
@@ -83,7 +83,7 @@ O banco de teste sobe sozinho. Não existe passo de preparação em nenhum alvo.
 ## Rodar só um tipo
 
 ```bash
-make test-unit                                      # os 441 unitários, ~5 s, sem Docker
+make test-unit                                      # os 447 unitários, ~5 s, sem Docker
 make test-api                                       # os 402 de API, ~35 s, sem Docker
 make test-integration                               # tudo que exige Postgres
 

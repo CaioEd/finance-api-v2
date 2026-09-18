@@ -36,14 +36,20 @@ O endpoint de cotação da BRAPI é o do `docs/brapi_api.md`:
 O Banco Central entra como terceira fonte porque a BRAPI fechou os índices atrás do plano pago. A
 API SGS é pública, sem token e sem limite prático:
 
-| Série | O que é |
-|---|---|
-| `12` | CDI diário |
-| `11` | SELIC diária |
-| `433` | IPCA mensal |
-| `195` | Poupança |
+| Série | O que é | Quantas leituras |
+|---|---|---|
+| `12` | CDI, % por dia útil | 1 |
+| `11` | SELIC, % por dia útil | 1 |
+| `433` | IPCA, % ao mês | 12 |
+| `195` | Poupança, % ao mês | 12 |
 
-`GET https://api.bcb.gov.br/dados/serie/bcdata.sgs.{serie}/dados/ultimos/1?formato=json`
+`GET https://api.bcb.gov.br/dados/serie/bcdata.sgs.{serie}/dados/ultimos/{n}?formato=json`
+
+**Série mensal vale pelo acumulado de 12 meses, não pela última leitura elevada a 12.** Inflação é
+sazonal: ao rodar contra o SGS de verdade, agosto/2026 fechou em `-0,32%`, que anualizado dá
+`-3,77% a.a.` — e um Tesouro IPCA+5,8% passava a render menos que a poupança. Com os doze meses,
+o mesmo IPCA dá `+4,22% a.a.`, que é o número que o mercado cita. A série diária não tem esse
+problema: o CDI de um dia útil é estável, e capitalizá-lo por 252 dá a taxa ao ano.
 
 ## As duas metades
 
