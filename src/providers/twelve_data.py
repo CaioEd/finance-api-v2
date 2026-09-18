@@ -28,8 +28,7 @@ from providers.base import AssetHit, get_json, to_decimal
 
 BASE_URL = "https://api.twelvedata.com"
 
-MAX_SYMBOLS_PER_REQUEST = 8
-"""O teto de créditos por minuto do plano gratuito. Ver o docstring do módulo."""
+MAX_SYMBOLS_PER_REQUEST = 8  # o teto de créditos por minuto do plano gratuito
 
 SEARCH_LIMIT = 10
 
@@ -37,10 +36,12 @@ USD = "USD"
 BRL = "BRL"
 USD_BRL = "USD/BRL"
 
-CRYPTO_QUOTE_CURRENCY = USD
-"""Os pares em dólar existem para todas as nove moedas; os em real, não."""
+CRYPTO_QUOTE_CURRENCY = USD  # os pares em real não existem para todas as moedas
 
 
+# Lista fechada, e não busca livre: uma busca aberta devolveria milhares de pares,
+# a maioria sem liquidez, e cada um viraria uma linha de catálogo a cotar toda
+# rodada — dentro de um orçamento de oito créditos por minuto.
 CRYPTOCURRENCIES: dict[str, str] = {
     "BTC": "Bitcoin",
     "ETH": "Ethereum",
@@ -52,21 +53,13 @@ CRYPTOCURRENCIES: dict[str, str] = {
     "USDT": "Tether",
     "ADA": "Cardano",
 }
-"""As criptomoedas que o produto oferece, pela abreviação com que são cotadas.
-
-Lista fechada, e não busca livre: são nove das dez do escopo, todas conferidas
-contra o provedor. Uma busca aberta devolveria milhares de pares, a maioria sem
-liquidez, e cada um deles viraria uma linha de catálogo a cotar toda rodada —
-dentro de um orçamento de oito créditos por minuto.
-"""
 
 
 def crypto_pair(symbol: str) -> str:
     """`BTC` para `BTC/USD` — o símbolo de consulta, que não é o de exibição.
 
-    A tela mostra `BTC`, e é `BTC` que está no catálogo. Guardar o par cru
-    prenderia o dado ao provedor da vez: outro cotaria `BTCUSDT`, e migrar
-    passaria a exigir reescrever linha de banco.
+    Guardar o par cru prenderia o dado ao provedor da vez: outro cotaria
+    `BTCUSDT`, e migrar passaria a exigir reescrever linha de banco.
     """
     return f"{symbol.upper()}/{CRYPTO_QUOTE_CURRENCY}"
 
@@ -82,9 +75,7 @@ class TwelveDataClient:
         """Preço de até `MAX_SYMBOLS_PER_REQUEST` símbolos, numa requisição.
 
         Símbolo que o provedor não conhece simplesmente **não aparece** no
-        resultado — a Twelve Data devolve um objeto de erro no lugar do preço
-        daquela chave, e nunca falha o lote inteiro por causa de um. Quem chama
-        trata a ausência; recusar tudo por um símbolo ruim desperdiçaria os
+        resultado: recusar o lote inteiro por causa de um desperdiçaria os
         créditos dos outros sete.
         """
         if not symbols:
@@ -121,9 +112,8 @@ class TwelveDataClient:
     async def search(self, term: str, *, limit: int = SEARCH_LIMIT) -> list[AssetHit]:
         """Busca de ações americanas. Não consome crédito.
 
-        Filtra pelo país porque o mesmo `AAPL` volta listado em Buenos Aires e
-        em Bogotá, em pesos: o usuário que escolhesse a linha errada teria uma
-        posição cotada numa moeda que este sistema não converte.
+        Filtra pela moeda porque o mesmo `AAPL` volta listado em Buenos Aires e em
+        Bogotá, em pesos — moeda que este sistema não converte.
         """
         payload = await get_json(
             self.http,

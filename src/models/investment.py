@@ -13,13 +13,12 @@ São duas tabelas porque são dois fatos com donos diferentes:
 
 Renda fixa não tem ativo: CDB, LCI, Tesouro e poupança não têm símbolo para
 cotar. O que os avalia é o índice (`rate_index`) e a taxa contratada
-(`rate_percent`) acruados desde `applied_on` — por isso `asset_id` é nulável, e
-por isso as duas metades da tabela têm colunas próprias.
+(`rate_percent`) acruados desde `applied_on` — por isso `asset_id` é nulável.
 
 **`current_value` é sempre em BRL**, inclusive para ação americana e cripto: é
 o número que soma no patrimônio, e um total que mistura moedas não soma. A
 moeda de origem fica em `investment_assets.currency`, e a conversão é do
-agendador (fase 2), que lê `USD/BRL` da Twelve Data na mesma rodada.
+agendador, que lê `USD/BRL` da Twelve Data na mesma rodada.
 """
 
 from __future__ import annotations
@@ -57,7 +56,6 @@ UNIT_DECIMAL_PLACES = 8
 
 RATE_MAX_DIGITS = 9
 RATE_DECIMAL_PLACES = 4
-"""`102.0000` (% do CDI) e `11.4500` (% ao ano) cabem aqui com folga."""
 
 SYMBOL_MAX_LENGTH = 24
 ASSET_NAME_MAX_LENGTH = 120
@@ -65,8 +63,8 @@ INVESTMENT_NAME_MAX_LENGTH = 120
 CURRENCY_LENGTH = 3
 LOGO_URL_MAX_LENGTH = 500
 
+# Nome que `NAMING_CONVENTION` dá à FK de `asset_id`, lido por quem traduz a violação.
 FK_INVESTMENT_ASSET = "fk_investments_asset_id_investment_assets"
-"""Nome que `NAMING_CONVENTION` dá à FK de `asset_id`, lido por quem traduz a violação."""
 
 
 class InvestmentClass(StrEnum):
@@ -96,6 +94,8 @@ class InvestmentType(StrEnum):
     SAVINGS = "savings"
 
 
+# Tipo novo sem entrada aqui estoura no `KeyError`, que é melhor do que cair em
+# silêncio numa das duas metades.
 CLASS_OF_TYPE: dict[InvestmentType, InvestmentClass] = {
     InvestmentType.BR_STOCK: InvestmentClass.VARIABLE_INCOME,
     InvestmentType.US_STOCK: InvestmentClass.VARIABLE_INCOME,
@@ -105,8 +105,6 @@ CLASS_OF_TYPE: dict[InvestmentType, InvestmentClass] = {
     InvestmentType.TREASURY: InvestmentClass.FIXED_INCOME,
     InvestmentType.SAVINGS: InvestmentClass.FIXED_INCOME,
 }
-"""A tabela que deriva a classe. Tipo novo sem entrada aqui estoura no `KeyError`,
-que é melhor do que cair em silêncio numa das duas metades."""
 
 VARIABLE_INCOME_TYPES = frozenset(
     kind for kind, family in CLASS_OF_TYPE.items() if family is InvestmentClass.VARIABLE_INCOME
@@ -167,29 +165,21 @@ class InvestmentAsset(TimestampMixin, Base):
     type: Mapped[InvestmentType] = mapped_column(
         _enum_column(InvestmentType, "investment_type", 16), nullable=False
     )
-    """Só os três de renda variável aparecem aqui; o CHECK abaixo impõe isso."""
 
+    # O código como o usuário o conhece, não o símbolo de consulta do provedor:
+    # a Twelve Data cota cripto como `BTC/USD`, e montar esse par é do cliente
+    # HTTP — mudar de provedor não pode obrigar a reescrever dado.
     symbol: Mapped[str] = mapped_column(String(SYMBOL_MAX_LENGTH), nullable=False)
-    """O código como o usuário o conhece: `PETR4`, `AAPL`, `BTC`.
-
-    Não é o símbolo de consulta do provedor. A Twelve Data cota cripto como
-    `BTC/USD`; montar esse par é do cliente HTTP (fase 2), não da coluna — a
-    tela mostra `BTC`, e mudar de provedor não pode obrigar a reescrever dado.
-    """
 
     name: Mapped[str] = mapped_column(String(ASSET_NAME_MAX_LENGTH), nullable=False)
     currency: Mapped[str] = mapped_column(String(CURRENCY_LENGTH), nullable=False)
-    """Moeda da cotação: `BRL` para ação brasileira, `USD` para americana e cripto."""
 
+    # `NULL` é "ainda não cotado": o ativo entra no catálogo no cadastro e a
+    # primeira cotação só chega na rodada seguinte. Zero diria que o ativo não
+    # vale nada, que é uma afirmação diferente de não saber.
     price: Mapped[Decimal | None] = mapped_column(
         Numeric(UNIT_MAX_DIGITS, UNIT_DECIMAL_PLACES), nullable=True
     )
-    """Último preço conhecido, na moeda do ativo. `NULL` é "ainda não cotado".
-
-    Nulável de propósito: o ativo entra no catálogo no instante do cadastro, e
-    a primeira cotação só chega na rodada seguinte do agendador. Zero diria que
-    o ativo não vale nada, que é uma afirmação diferente de não saber.
-    """
 
     previous_close: Mapped[Decimal | None] = mapped_column(
         Numeric(UNIT_MAX_DIGITS, UNIT_DECIMAL_PLACES), nullable=True
@@ -197,10 +187,9 @@ class InvestmentAsset(TimestampMixin, Base):
     change_percent: Mapped[Decimal | None] = mapped_column(
         Numeric(RATE_MAX_DIGITS, RATE_DECIMAL_PLACES), nullable=True
     )
-    """Variação do dia, como o provedor a devolve — não recalculada aqui."""
 
+    # Quando o provedor mediu o preço — é o que ordena a fila do agendador.
     quoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    """Quando o provedor mediu o preço. É o que ordena o que o agendador atualiza primeiro."""
 
     logo_url: Mapped[str | None] = mapped_column(String(LOGO_URL_MAX_LENGTH), nullable=True)
 
@@ -249,6 +238,7 @@ class Investment(TimestampMixin, Base):
         _enum_column(InvestmentType, "investment_type", 16), nullable=False
     )
 
+    # `NULL` em renda fixa, que não tem símbolo.
     asset_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         # Sem `ondelete`: o catálogo não é excluído pela API, e NO ACTION
@@ -256,82 +246,54 @@ class Investment(TimestampMixin, Base):
         ForeignKey("investment_assets.id"),
         nullable=True,
     )
-    """O ativo cotado; `NULL` em renda fixa, que não tem símbolo."""
 
+    # `lazy="raise"` troca um `MissingGreenlet` no meio da serialização por um
+    # erro que diz o que faltou — o `contains_eager` do repositório.
     asset: Mapped[InvestmentAsset | None] = relationship(lazy="raise")
-    """Carregada de propósito pelo repositório: preço e moeda saem daqui.
 
-    `lazy="raise"` troca um `MissingGreenlet` no meio da serialização por um
-    erro que diz o que faltou — o `contains_eager` do repositório.
-    """
-
+    # Como o usuário chama a posição: dois CDBs do mesmo banco com vencimentos
+    # diferentes precisam ser distinguíveis na lista.
     name: Mapped[str] = mapped_column(String(INVESTMENT_NAME_MAX_LENGTH), nullable=False)
-    """Como o usuário chama a posição: "CDB Banco Inter", "Petrobras PN".
-
-    Existe também na renda variável, onde nasce do nome do ativo: dois CDBs do
-    mesmo banco com vencimentos diferentes precisam ser distinguíveis na lista.
-    """
 
     quantity: Mapped[Decimal | None] = mapped_column(
         Numeric(UNIT_MAX_DIGITS, UNIT_DECIMAL_PLACES), nullable=True
     )
-    """Cotas ou frações de moeda. `NULL` em renda fixa."""
 
+    # Preço médio pago, na moeda do ativo. Recalculado a cada aporte pela média
+    # ponderada — é o que dispensa guardar o histórico de compras aqui.
     average_price: Mapped[Decimal | None] = mapped_column(
         Numeric(UNIT_MAX_DIGITS, UNIT_DECIMAL_PLACES), nullable=True
     )
-    """Preço médio pago, na moeda do ativo. `NULL` em renda fixa.
 
-    Recalculado a cada aporte pela média ponderada — é o que permite ao
-    rendimento da posição ser `valor atual - investido` sem guardar o histórico
-    de compras aqui (ele está em `transactions`).
-    """
-
+    # Quanto saiu do bolso, **em BRL**. Não é `quantity x average_price`: para
+    # ação americana e cripto esse produto está em dólar, e compará-lo com um
+    # `current_value` em real produziria um lucro que é só a cotação do câmbio.
     invested_amount: Mapped[Decimal] = mapped_column(
         Numeric(MONEY_MAX_DIGITS, MONEY_DECIMAL_PLACES), nullable=False, server_default=text("0")
     )
-    """Quanto saiu do bolso, **em BRL** — soma de todos os aportes da posição.
-
-    Uma coluna só para as duas metades: em renda fixa é o valor aplicado, em
-    renda variável é o que se pagou pelas cotas. Deriva o lucro
-    (`current_value - invested_amount`) sem consultar `transactions`.
-
-    Não é `quantity x average_price`: para ação americana e cripto esse produto
-    está em **dólar**, e compará-lo com um `current_value` em real produziria um
-    lucro que é só a cotação do câmbio. Quem compra AAPL paga um valor em reais,
-    e é esse valor que o contrato pede — a única fonte honesta para uma compra
-    passada, já que a taxa daquele dia não está em lugar nenhum.
-    """
 
     rate_index: Mapped[RateIndex | None] = mapped_column(
         _enum_column(RateIndex, "rate_index", 16), nullable=True
     )
+    # O que a taxa significa depende de `rate_index` — ver a tabela em `RateIndex`.
     rate_percent: Mapped[Decimal | None] = mapped_column(
         Numeric(RATE_MAX_DIGITS, RATE_DECIMAL_PLACES), nullable=True
     )
-    """O que a taxa significa depende de `rate_index` - ver a tabela em `RateIndex`."""
 
     applied_on: Mapped[date | None] = mapped_column(Date, nullable=True)
-    """Data da aplicação: o marco a partir do qual a renda fixa rende."""
-
+    # `NULL` é sem prazo — poupança e CDB de liquidez diária.
     matures_on: Mapped[date | None] = mapped_column(Date, nullable=True)
-    """Vencimento. `NULL` é sem prazo — poupança e CDB de liquidez diária."""
 
+    # Materializado, e não calculado na leitura: recalcular na consulta obrigaria
+    # toda listagem a fazer a conversão de moeda, e o total da carteira passaria
+    # a depender de quando a tela foi aberta.
     current_value: Mapped[Decimal] = mapped_column(
         Numeric(MONEY_MAX_DIGITS, MONEY_DECIMAL_PLACES), nullable=False, server_default=text("0")
     )
-    """Valor da posição hoje, **em BRL** — o número que o agendador corrige.
-
-    Materializado, e não calculado na leitura, porque é isto que a regra 6 pede:
-    "se houver mudança nos valores deve corrigir no banco". Recalcular na
-    consulta também obrigaria toda listagem a fazer a conversão de moeda, e o
-    total da carteira passaria a depender de quando a tela foi aberta.
-    """
 
     value_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    """Quando `current_value` foi corrigido pela última vez. `NULL` é "nunca"."""
 
     __table_args__ = (
         # CHECKs simples só: a regra cruzada ("renda variável exige ativo") é do
@@ -365,7 +327,6 @@ class Investment(TimestampMixin, Base):
 
     @property
     def investment_class(self) -> InvestmentClass:
-        """Renda fixa ou variável — derivada do tipo, a única fonte."""
         return CLASS_OF_TYPE[self.type]
 
     @property
@@ -380,7 +341,7 @@ class InvestmentRate(TimestampMixin, Base):
     """A última leitura de um índice do Banco Central, anualizada.
 
     Uma linha por índice, global como o catálogo de ativos: o CDI é o mesmo para
-    todo mundo. Existe para que o acrual da renda fixa seja aritmética local -
+    todo mundo. Existe para que o acrual da renda fixa seja aritmética local —
     quatro chamadas públicas por rodada, e não uma por posição.
 
     Guardar já anualizado é o que permite a um cálculo só avaliar as quatro
@@ -394,24 +355,16 @@ class InvestmentRate(TimestampMixin, Base):
     index: Mapped[RateIndex] = mapped_column(
         _enum_column(RateIndex, "rate_index", 16), primary_key=True
     )
-    """Chave primária: não há segunda linha para o mesmo índice, e o `UPSERT` da
-    rodada não precisa de id sintético para saber o que substituir."""
 
     annual_percent: Mapped[Decimal] = mapped_column(
         Numeric(RATE_MAX_DIGITS, RATE_DECIMAL_PLACES), nullable=False
     )
-    """A taxa ao ano, em porcento: `13.6500` para 13,65% a.a."""
 
+    # O dia a que a leitura se refere, que não é o dia em que ela foi buscada: o
+    # SGS publica com atraso, e um CDI de ontem é dado correto.
     reference_date: Mapped[date] = mapped_column(Date, nullable=False)
-    """O dia a que a leitura se refere - que não é o dia em que ela foi buscada.
-
-    O SGS publica com atraso, e um CDI de ontem é dado correto. Confundir os
-    dois faria a tela dizer "atualizado agora" sobre um número de três dias
-    atrás, que é justamente o que o usuário precisa saber.
-    """
 
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    """Quando a rodada leu. É o que decide se vale a pena ler de novo."""
 
     def __repr__(self) -> str:
         return f"<InvestmentRate {self.index} {self.annual_percent}% a.a.>"

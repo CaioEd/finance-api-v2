@@ -79,11 +79,10 @@ def _recurring_scheduler(app: FastAPI, settings: Settings) -> PeriodicJob | None
 
 
 def _providers(http: httpx.AsyncClient, settings: Settings) -> MarketProviders:
-    """Os clientes que têm credencial. Sem token, o provedor simplesmente não existe.
+    """Os clientes que têm credencial. Sem token, o provedor não existe.
 
-    Recusar a subida por falta de chave de cotação seria desproporcional: o
-    resto da aplicação funciona inteiro sem ela, e é assim que a suíte e um
-    ambiente de revisão rodam.
+    Recusar a subida por falta de chave de cotação seria desproporcional: o resto
+    da aplicação funciona sem ela, e é assim que a suíte roda.
     """
     return MarketProviders(
         brapi=BrapiClient(http=http, token=settings.brapi_token) if settings.brapi_token else None,

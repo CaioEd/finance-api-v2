@@ -14,9 +14,8 @@ Três decisões de contrato que vêm do desenho:
   escolher o schema antes de escolher o tipo, e o PATCH não teria como
   expressar "mude só isto" sobre ela.
 
-`invested_amount` é sempre **em BRL** — ver o docstring da coluna. Por isso ele
-é obrigatório em ativo cotado em dólar e opcional em ativo cotado em real, onde
-`quantity x average_price` já é o valor pago.
+`invested_amount` é sempre **em BRL**: obrigatório em ativo cotado em dólar e
+opcional em ativo cotado em real, onde `quantity x average_price` já é o valor pago.
 """
 
 from __future__ import annotations
@@ -54,12 +53,11 @@ from models.transaction import DESCRIPTION_MAX_LENGTH
 from schemas.base import PatchIn
 from schemas.transaction import Money, TransactionOut
 
+# Decidido pelo `type`, e não pela moeda do ativo, porque na criação o ativo
+# ainda pode não existir no catálogo.
 USD_TYPES = frozenset({InvestmentType.US_STOCK, InvestmentType.CRYPTO})
-"""Os tipos cotados em dólar. Decidido pelo `type`, e não pela moeda do ativo,
-porque na criação o ativo ainda pode não existir no catálogo."""
 
 SAVINGS_RATE_PERCENT = Decimal("100")
-"""Poupança rende a regra do Banco Central inteira; não há taxa a contratar."""
 
 
 type Quantity = Annotated[
@@ -68,20 +66,20 @@ type Quantity = Annotated[
 ]
 type UnitPrice = Quantity
 
+# Percentual do índice (`102` = 102% do CDI) ou taxa anual, se `prefixed`.
 type RatePercent = Annotated[
     Decimal,
     Field(gt=0, max_digits=RATE_MAX_DIGITS, decimal_places=RATE_DECIMAL_PLACES),
 ]
-"""Percentual do índice (`102` = 102% do CDI) ou taxa anual, se `prefixed`."""
 
+# Maiúsculo na entrada: o índice único compara `upper(symbol)`, e deixar a caixa
+# passar faria `petr4` e `PETR4` conviverem como dois ativos na mesma tela.
 type Symbol = Annotated[
     str,
     StringConstraints(
         strip_whitespace=True, to_upper=True, min_length=1, max_length=SYMBOL_MAX_LENGTH
     ),
 ]
-"""Maiúsculo na entrada: o índice único compara `upper(symbol)`, e deixar a
-caixa passar faria `petr4` e `PETR4` conviverem como dois ativos na mesma tela."""
 
 type InvestmentName = Annotated[
     str,
@@ -101,8 +99,8 @@ def money_string(value: Decimal) -> str:
 def unit_string(value: Decimal) -> str:
     """Quantidade sem zeros à toa e sem notação científica.
 
-    `normalize()` sozinho devolve `3.2E+2` para `320.00000000`; o `f` do
-    format desfaz o expoente. Sem os dois, a tela mostraria "3.2E+2 cotas".
+    `normalize()` sozinho devolve `3.2E+2` para `320.00000000`; o `f` do format
+    desfaz o expoente.
     """
     return format(value.normalize(), "f")
 
@@ -163,23 +161,20 @@ class InvestmentOut(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def investment_class(self) -> InvestmentClass:
-        """Derivada do tipo, nunca gravada — ver `models.investment`."""
         return CLASS_OF_TYPE[self.type]
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def profit(self) -> str:
-        """Quanto a posição rendeu, em BRL. Negativo quando está no prejuízo."""
         return money_string(self.current_value - self.invested_amount)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def profit_percent(self) -> str | None:
-        """Rendimento sobre o investido. `None` quando não se investiu nada.
+        """`None` quando não se investiu nada.
 
-        Dividir por zero devolveria `Infinity`, que não é JSON válido — e um
-        zero no lugar afirmaria "não rendeu", que é diferente de "não dá para
-        calcular".
+        Dividir por zero devolveria `Infinity`, que não é JSON válido — e um zero
+        no lugar afirmaria "não rendeu", que é diferente de "não dá para calcular".
         """
         if self.invested_amount == 0:
             return None
@@ -207,14 +202,10 @@ class InvestmentPageOut(BaseModel):
 class AllocationOut(BaseModel):
     """Uma fatia da carteira — por classe ou por tipo."""
 
-    label: str
-    """O valor do enum (`fixed_income`, `br_stock`); quem desenha traduz."""
-
+    label: str  # o valor do enum (`fixed_income`, `br_stock`); quem desenha traduz
     value: Decimal
     invested: Decimal
-    percent: Decimal
-    """Participação no patrimônio total, de 0 a 100."""
-
+    percent: Decimal  # participação no patrimônio total, de 0 a 100
     count: int
 
     @field_serializer("value", "invested")
@@ -236,9 +227,9 @@ class InvestmentSummaryOut(BaseModel):
     positions: int
     by_class: list[AllocationOut]
     by_type: list[AllocationOut]
+    # A correção mais recente de qualquer posição; `None` enquanto o agendador
+    # não rodou, para a tela dizer "ainda não cotado" em vez de mentir.
     value_updated_at: datetime | None
-    """A correção mais recente de qualquer posição. `None` enquanto o agendador
-    não rodou — é o que deixa a tela dizer "ainda não cotado" em vez de mentir."""
 
     @field_serializer("total_value", "total_invested", "profit")
     def _money_as_string(self, value: Decimal) -> str:
@@ -272,14 +263,14 @@ class InvestmentCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: InvestmentType
+    # Ausente em renda variável vira o nome do ativo; em renda fixa é obrigatório.
     name: InvestmentName | None = None
-    """Ausente em renda variável vira o nome do ativo; em renda fixa é obrigatório."""
 
     # --- renda variável ---
     symbol: Symbol | None = None
     quantity: Quantity | None = None
+    # Preço médio pago, na **moeda do ativo** — dólar em ação americana e cripto.
     average_price: UnitPrice | None = None
-    """Preço médio pago, na **moeda do ativo** — dólar em ação americana e cripto."""
 
     # --- renda fixa ---
     rate_index: RateIndex | None = None
@@ -288,9 +279,9 @@ class InvestmentCreateIn(BaseModel):
     matures_on: date | None = None
 
     # --- as duas ---
+    # Quanto se pagou, **em BRL**. Obrigatório, menos em ação brasileira, onde
+    # `quantity x average_price` já está em real e serve de default.
     invested_amount: Money | None = None
-    """Quanto se pagou, **em BRL**. Obrigatório, menos em ação brasileira, onde
-    `quantity x average_price` já está em real e serve de default."""
 
     @model_validator(mode="after")
     def _fields_match_the_type(self) -> Self:
@@ -375,21 +366,16 @@ class ContributionIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    amount: Money
-    """Quanto saiu da conta, em BRL. É o valor do lançamento."""
-
+    amount: Money  # quanto saiu da conta, em BRL; é o valor do lançamento
     category_id: UUID
-    quantity: Quantity | None = None
-    """Cotas compradas. Obrigatório em renda variável, proibido em renda fixa."""
+    quantity: Quantity | None = None  # obrigatório em renda variável
 
+    # Preço pago por cota, na moeda do ativo. Ausente em ativo em real é
+    # `amount / quantity`; em ativo em dólar é obrigatório, porque `amount` está
+    # em BRL e dividir daria um preço em moeda nenhuma.
     unit_price: UnitPrice | None = None
-    """Preço pago por cota, na moeda do ativo. Ausente em ativo em real é
-    `amount / quantity`; em ativo em dólar é obrigatório, porque `amount` está
-    em BRL e dividir daria um preço em moeda nenhuma."""
 
-    occurred_on: date | None = None
-    """Ausente é "hoje" — resolvido pelo `Clock`, no fuso da aplicação."""
-
+    occurred_on: date | None = None  # ausente é "hoje", pelo `Clock` da aplicação
     description: Description = ""
 
 
@@ -412,11 +398,8 @@ class EarningIn(BaseModel):
 class AssetSearchOut(BaseModel):
     """Um ativo achado na busca — ainda não é posição de ninguém.
 
-    Escolher uma linha daqui é preencher o `symbol` de um `POST /investments`.
-    `price` vem quando o provedor o entrega de graça na mesma resposta (é o caso
-    da BRAPI) e é `None` quando saber o preço custaria uma consulta por linha —
-    em cripto, as nove moedas consumiriam o orçamento de um minuto inteiro para
-    um número que ninguém precisa ver antes de escolher a moeda.
+    `price` vem quando o provedor o entrega de graça na mesma resposta (caso da
+    BRAPI) e é `None` quando saber o preço custaria uma consulta por linha.
     """
 
     type: InvestmentType
@@ -438,8 +421,8 @@ class AssetSearchOut(BaseModel):
 def _require(kind: InvestmentType, **fields: Any) -> None:
     """Cobra os campos que o `type` escolhido torna obrigatórios.
 
-    O `ValueError` vira 422 com o campo apontado, como qualquer recusa do
-    Pydantic — não um 500 na violação do `NOT NULL` lá no banco.
+    O `ValueError` vira 422 com o campo apontado — não um 500 na violação do
+    `NOT NULL` lá no banco.
     """
     missing = sorted(name for name, value in fields.items() if value is None)
     if missing:
@@ -449,8 +432,8 @@ def _require(kind: InvestmentType, **fields: Any) -> None:
 def _reject(kind: InvestmentType, **fields: Any) -> None:
     """Recusa o campo que não pertence àquele `type`.
 
-    Aceitar e ignorar em silêncio é pior: a resposta `201` diria que a taxa de
-    um CDB foi gravada numa posição de ação, onde essa coluna nem existe.
+    Aceitar e ignorar em silêncio faria o `201` dizer que a taxa de um CDB foi
+    gravada numa posição de ação, onde essa coluna nem existe.
     """
     extra = sorted(name for name, value in fields.items() if value is not None)
     if extra:

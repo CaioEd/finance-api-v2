@@ -8,25 +8,19 @@ Uma rodada faz quatro coisas, nesta ordem e **cada uma no seu commit**:
 4. cota ações americanas e cripto na Twelve Data, em lote, e converte o dólar.
 
 Commits separados porque as etapas são independentes: a Twelve Data fora do ar
-não pode desfazer o acrual da renda fixa que já foi calculado. Uma etapa que
-falha só vai para o log, e a rodada seguinte tenta de novo — `current_value`
-continua valendo o que valia, que é a resposta certa para "não sei quanto vale
-agora".
+não pode desfazer o acrual da renda fixa já calculado. Etapa que falha vira log,
+e a rodada seguinte tenta de novo — `current_value` continua valendo o que valia.
 
 ## O orçamento não é detalhe
 
-Os planos gratuitos decidem o desenho (medições em `docs/investimentos.md`):
-a BRAPI aceita **um ativo por requisição**, 20 por minuto; a Twelve Data dá
-**8 créditos por minuto e 800 por dia**, um por símbolo, e o lote que estoura o
-limite gasta os créditos sem devolver nada. Com 96 rodadas por dia, sobram cerca
-de oito créditos de Twelve Data por rodada.
-
-Daí duas regras:
+Os planos gratuitos decidem o desenho (medições em `docs/investimentos.md`): a
+BRAPI aceita **um ativo por requisição**, 20 por minuto; a Twelve Data dá **8
+créditos por minuto e 800 por dia**, e o lote que estoura o limite gasta os
+créditos sem devolver nada. Daí duas regras:
 
 - **a fila é por idade da cotação** (`stale_assets`), então o teto por rodada
-  atrasa um ativo, nunca o abandona: o que não coube é o mais velho da próxima;
-- **só se cota o que alguém tem.** Ativo que ficou no catálogo sem dono nenhum
-  é pulado — o catálogo sobrevive à posição, mas não merece crédito por isso.
+  atrasa um ativo, nunca o abandona;
+- **só se cota o que alguém tem.** Ativo sem dono no catálogo é pulado.
 """
 
 from __future__ import annotations
@@ -56,18 +50,14 @@ logger = logging.getLogger(__name__)
 BRL = "BRL"
 USD = "USD"
 
+# Cripto é plano pago na BRAPI, e ação americana ela não cobre.
 TWELVE_DATA_TYPES = (InvestmentType.US_STOCK, InvestmentType.CRYPTO)
-"""Cripto é plano pago na BRAPI, e ação americana ela não cobre."""
 
 
 @dataclass(frozen=True, slots=True)
 class QuoteBudget:
-    """Quantas consultas uma rodada pode gastar em cada provedor.
-
-    Vem da configuração, e não de constante, porque quem paga um plano melhor
-    muda o número sem mexer no código — e quem não paga precisa que o default
-    caiba nos 800 créditos diários.
-    """
+    """Quantas consultas uma rodada pode gastar em cada provedor. Vem da
+    configuração para que um plano melhor não exija mexer no código."""
 
     brapi_symbols: int
     twelve_data_symbols: int
@@ -144,8 +134,7 @@ async def _refresh_rates(
     """Lê CDI, SELIC, IPCA e poupança — só os que envelheceram.
 
     O SGS publica uma vez por dia; buscar os quatro a cada 15 minutos seriam 384
-    requisições diárias para quatro números que não mudaram. O teto de idade é
-    configurável e o default é meio dia.
+    requisições diárias para números que não mudaram.
     """
     if providers.bcb is None:
         return RefreshReport()
@@ -185,9 +174,8 @@ async def _accrue_fixed_income(
 ) -> RefreshReport:
     """Capitaliza cada posição pelos dias corridos desde a última correção.
 
-    Nenhuma chamada externa: as taxas já estão na tabela. O que manda a posição
-    não render é não saber o índice — nunca um zero, que afirmaria que o
-    dinheiro parou.
+    Nenhuma chamada externa: as taxas já estão na tabela. Índice desconhecido
+    deixa a posição parada, em vez de rendê-la a zero.
     """
     today = clock.today()
     now = clock.now_utc()
@@ -270,9 +258,7 @@ async def _quote_abroad(
 ) -> RefreshReport:
     """Ações americanas e cripto, em lote, mais o câmbio da rodada.
 
-    O `USD/BRL` é **um** crédito para a rodada inteira, e não um por ativo: é
-    a mesma taxa para todos, e cotá-la por posição consumiria o orçamento
-    inteiro em conversão.
+    O `USD/BRL` é **um** crédito para a rodada inteira, e não um por ativo.
     """
     if providers.twelve_data is None or budget.twelve_data_symbols <= 0:
         return RefreshReport()
@@ -335,7 +321,7 @@ async def _apply(
     """Grava a cotação no catálogo e revaloriza as posições dela, em BRL.
 
     `rate` é quantos reais vale uma unidade da moeda do ativo: 1 para quem já é
-    cotado em real, e o câmbio da rodada para quem é cotado em dólar.
+    cotado em real, o câmbio da rodada para quem é cotado em dólar.
     """
     now = clock.now_utc()
     asset.price = quote.price

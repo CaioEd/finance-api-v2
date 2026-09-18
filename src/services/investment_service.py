@@ -6,24 +6,17 @@ tanto o repositório real quanto um duble as satisfazem.
 
 Quatro regras vivem aqui, e só aqui:
 
-1. **O `type` decide a metade da tabela.** Renda variável tem ativo, quantidade
-   e preço médio; renda fixa tem índice, taxa e datas. Campo da metade errada é
-   recusado em vez de gravado em silêncio (`InvalidInvestmentFieldsError`).
-2. **Cadastrar não lança nada; aportar lança.** Quem cadastra declara uma
-   posição que já existe, e a compra de dois anos atrás não pode cair como
-   despesa do mês corrente. `contribute` é que grava o lançamento.
-3. **Aporte é despesa e provento é receita.** O `kind` vem da categoria (ver
-   `models.transaction`), então a categoria escolhida precisa ser do tipo certo
-   — senão o dinheiro investido entraria no saldo com o sinal trocado.
-4. **Preço médio é média ponderada**, recalculada a cada aporte. É o que
-   permite ao lucro ser `valor atual - investido` sem guardar aqui o histórico
-   de compras, que já está em `transactions`.
+1. **O `type` decide a metade da tabela.** Campo da metade errada é recusado em
+   vez de gravado em silêncio (`InvalidInvestmentFieldsError`).
+2. **Cadastrar não lança nada; aportar lança.** A compra de dois anos atrás não
+   pode cair como despesa do mês corrente.
+3. **Aporte é despesa e provento é receita.** O `kind` vem da categoria, então a
+   categoria escolhida precisa ser do tipo certo — senão o dinheiro investido
+   entraria no saldo com o sinal trocado.
+4. **Preço médio é média ponderada**, recalculada a cada aporte.
 
-O que **não** vive aqui é a cotação: `current_value` nasce igual ao investido e
-quem o corrige é o agendador (`jobs.investment_quotes`), que é a única parte do
-sistema que fala com provedor externo. Uma posição recém-cadastrada vale o que
-se pagou por ela até a primeira rodada — o que é verdade, e é melhor do que um
-zero que diria que ela não vale nada.
+A cotação **não** vive aqui: `current_value` nasce igual ao investido, e quem o
+corrige é o agendador (`jobs.investment_quotes`).
 """
 
 from __future__ import annotations
@@ -82,21 +75,14 @@ FIXED_INCOME_FIELDS = frozenset({"rate_index", "rate_percent", "applied_on", "ma
 
 
 def currency_of(kind: InvestmentType) -> str:
-    """A moeda em que o ativo daquele tipo é cotado.
-
-    Decidido pelo tipo, e não consultado no provedor: ação americana e cripto
-    são cotadas em dólar, ação brasileira em real, e isso não muda com o
-    provedor da vez.
-    """
+    """A moeda do tipo, e não a consultada no provedor: isso não muda com o
+    provedor da vez."""
     return USD if kind in USD_TYPES else BRL
 
 
 def as_money(value: Decimal) -> Decimal:
-    """Arredonda para as duas casas da coluna, meio para cima.
-
-    Explícito porque o default do `Decimal` é banqueiro (`ROUND_HALF_EVEN`), e
-    dinheiro arredondado assim não bate com o extrato de ninguém.
-    """
+    """Meio para cima, explícito: o default do `Decimal` é banqueiro
+    (`ROUND_HALF_EVEN`), e dinheiro assim não bate com o extrato de ninguém."""
     return value.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
@@ -129,12 +115,8 @@ class InvestmentStore(Protocol):
 
 
 class CategoryLookup(Protocol):
-    """A única coisa que aportar exige de categorias: resolver uma que o dono enxergue.
-
-    Estreito de propósito, como em `services.transaction_service`: o serviço não
-    lista nem altera categoria, e pedir o repositório inteiro deixaria isso
-    possível por descuido.
-    """
+    """Estreito de propósito, como em `services.transaction_service`: o serviço
+    não lista nem altera categoria."""
 
     async def get_visible(self, category_id: UUID, user_id: UUID) -> Category | None: ...
 
@@ -163,11 +145,8 @@ class InvestmentPage:
 
 @dataclass(frozen=True, slots=True)
 class Slice:
-    """Acumulador de uma fatia da carteira, antes de saber a participação dela.
-
-    Somável para que agrupar por classe seja somar os tipos daquela metade, e
-    não uma segunda consulta sobre exatamente as mesmas linhas.
-    """
+    """Fatia da carteira antes de saber a participação dela. Somável para que
+    agrupar por classe não custe uma segunda consulta sobre as mesmas linhas."""
 
     value: Decimal = ZERO
     invested: Decimal = ZERO
@@ -207,7 +186,7 @@ class PortfolioSummary:
 
     @property
     def profit_percent(self) -> str | None:
-        """`None` quando nada foi investido — dividir por zero não é um número."""
+        # `None` quando nada foi investido: dividir por zero não é um número.
         if self.total_invested == 0:
             return None
         return f"{self.profit / self.total_invested * 100:.4f}"
@@ -255,8 +234,8 @@ class InvestmentService:
         """Os números do topo da tela, de uma varredura só.
 
         A classe sai da soma dos tipos dela, em Python: uma segunda consulta
-        agrupada por classe percorreria exatamente as mesmas linhas e poderia
-        observar um estado diferente se o agendador gravasse entre as duas.
+        agrupada por classe poderia observar um estado diferente se o agendador
+        gravasse entre as duas.
         """
         rows = await self._investments.totals_by_type(user.id)
         total_value = sum((row.value for row in rows), ZERO)
@@ -330,11 +309,8 @@ class InvestmentService:
     async def _asset_for(
         self, kind: InvestmentType, symbol: str, name: str | None
     ) -> InvestmentAsset:
-        """O ativo do catálogo global, criado na primeira vez que alguém o cadastra.
-
-        Sem cotação: quem cota é o agendador. O catálogo existe para que cem
-        usuários com PETR4 custem uma requisição por rodada, e não cem.
-        """
+        """O ativo do catálogo global, criado na primeira vez que alguém o
+        cadastra. Sem cotação: quem cota é o agendador."""
         existing = await self._investments.get_asset(kind, symbol)
         if existing is not None:
             return existing
@@ -363,12 +339,8 @@ class InvestmentService:
         return investment
 
     async def delete(self, user: User, investment_id: UUID) -> None:
-        """Exclui a posição. Os lançamentos ficam, com `investment_id` nulo.
-
-        É o `ON DELETE SET NULL` da coluna: o aporte saiu da conta de verdade, e
-        apagá-lo para remover um rótulo falsificaria o saldo do mês em que ele
-        aconteceu.
-        """
+        """Exclui a posição. Os lançamentos ficam, com `investment_id` nulo: o
+        aporte saiu da conta de verdade, e apagá-lo falsificaria o saldo do mês."""
         investment = await self._owned_or_fail(user, investment_id)
         await self._investments.delete(investment)
         await self._commit()
@@ -377,8 +349,8 @@ class InvestmentService:
         """Aporta: grava a despesa e aumenta a posição no mesmo commit.
 
         A posição é travada porque o preço médio é lido, recalculado e gravado:
-        dois aportes simultâneos sem trava calculariam a média sobre a mesma
-        quantidade antiga, e o segundo sobrescreveria o primeiro.
+        sem trava, dois aportes simultâneos calculariam a média sobre a mesma
+        quantidade antiga.
         """
         investment = await self._owned_or_fail(user, investment_id, lock=True)
         category = await self._category_of_kind(user, data.category_id, CategoryKind.EXPENSE)
@@ -411,8 +383,7 @@ class InvestmentService:
     async def register_earning(self, user: User, investment_id: UUID, data: EarningIn) -> Movement:
         """Registra o provento: grava a receita e **não** mexe na posição.
 
-        Dividendo cai na conta, não vira cota. Reinvestir é um aporte, e é uma
-        segunda chamada de propósito — são dois fatos, e os dois aconteceram.
+        Dividendo cai na conta, não vira cota; reinvestir é um aporte à parte.
         """
         investment = await self._owned_or_fail(user, investment_id)
         category = await self._category_of_kind(user, data.category_id, CategoryKind.INCOME)
@@ -431,11 +402,8 @@ class InvestmentService:
         description: str,
         prefix: str,
     ) -> Transaction:
-        """O lançamento comum que um movimento de investimento produz.
-
-        `investment_id` é a única marca que ele carrega: saldo, extrato e PDF
-        continuam somando uma tabela só, sem saber que investimentos existem.
-        """
+        """O lançamento comum que um movimento produz. `investment_id` é a única
+        marca que ele carrega: saldo, extrato e PDF seguem somando uma tabela só."""
         transaction = Transaction(
             user_id=investment.user_id,
             category_id=category.id,
@@ -464,8 +432,8 @@ class InvestmentService:
         """A categoria que este usuário pode usar, e do tipo que a rota exige.
 
         `get_visible` devolve `None` tanto para a inexistente quanto para a de
-        outra pessoa, e a recusa é a mesma — a resposta não confirma o que
-        existe na conta alheia.
+        outra pessoa, e a recusa é a mesma: a resposta não confirma o que existe
+        na conta alheia.
         """
         category = await self._categories.get_visible(category_id, user.id)
         if category is None:
@@ -502,9 +470,8 @@ def _fill_fixed_income(investment: Investment, data: InvestmentCreateIn) -> None
 def _apply_purchase(investment: Investment, data: ContributionIn) -> None:
     """Soma as cotas e recalcula o preço médio ponderado.
 
-    O preço unitário fica na moeda do ativo. Em ativo cotado em real ele pode
-    sair de `amount / quantity`; em dólar não pode — `amount` está em BRL, e a
-    divisão daria um número em moeda nenhuma. Por isso ele é exigido lá.
+    O preço unitário fica na moeda do ativo: em real pode sair de
+    `amount / quantity`; em dólar é exigido, porque `amount` está em BRL.
     """
     if data.quantity is None:
         raise InvalidInvestmentFieldsError(["quantity"])
@@ -533,18 +500,13 @@ def _reject_fields_of_the_other_half(investment: Investment, changes: dict[str, 
 
 
 def _latest(first: datetime | None, second: datetime | None) -> datetime | None:
-    """O mais recente dos dois instantes; `None` só quando os dois são `None`."""
     known = [moment for moment in (first, second) if moment is not None]
     return max(known) if known else None
 
 
 def _allocation(label: str, share: Slice, total_value: Decimal) -> Allocation:
-    """A fatia, com participação zero quando a carteira inteira vale zero.
-
-    Zero e não `None`: a lista de alocação é desenhada como barra, e uma fatia
-    sem percentual quebraria o desenho — enquanto "0% de uma carteira que vale
-    zero" é exatamente o que se quer mostrar.
-    """
+    """A fatia, com participação zero — e não `None` — quando a carteira inteira
+    vale zero: a alocação é desenhada como barra, e falta de percentual a quebra."""
     percent = Decimal(0) if total_value == 0 else share.value / total_value * 100
     return Allocation(
         label=label,

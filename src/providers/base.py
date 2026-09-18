@@ -4,10 +4,8 @@ Os três tipos de saída (`Quote`, `AssetHit`, `IndexRate`) são deste pacote, n
 do provedor: é o que permite ao agendador tratar BRAPI e Twelve Data pelo mesmo
 laço, e ao domínio não saber que nenhum dos dois existe.
 
-**Falha de provedor nunca é 500.** A rede de outra pessoa cair não é defeito
-deste código, e uma cotação velha é um estado legítimo — ver
-`MarketDataUnavailableError`, que a borda traduz em 503 e o agendador só
-registra no log para tentar de novo na rodada seguinte.
+**Falha de provedor nunca é 500.** Ver `MarketDataUnavailableError`, que a borda
+traduz em 503 e o agendador só registra no log para tentar de novo depois.
 """
 
 from __future__ import annotations
@@ -24,9 +22,9 @@ from core.errors import ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
+# Curto de propósito: o agendador prefere pular um ativo a segurar a rodada
+# inteira esperando um provedor que não responde.
 DEFAULT_TIMEOUT_SECONDS = 10.0
-"""Curto de propósito: o agendador roda a cada 15 min e prefere pular um ativo a
-segurar a rodada inteira esperando um provedor que não responde."""
 
 
 class MarketDataUnavailableError(ServiceUnavailableError):
@@ -64,9 +62,8 @@ class AssetHit:
 class IndexRate:
     """Uma taxa de índice, já **anualizada em porcento**.
 
-    Anualizar no cliente, e não em quem acrua, é o que deixa as quatro séries do
-    Banco Central — duas diárias, duas mensais — chegarem ao mesmo cálculo. A
-    conversão está em `providers.bcb`, junto do número que ela converte.
+    Anualizar no cliente é o que deixa as quatro séries do Banco Central — duas
+    diárias, duas mensais — chegarem ao mesmo cálculo.
     """
 
     reference_date: date
@@ -82,9 +79,8 @@ async def get_json(
 ) -> Any:
     """`GET` que devolve JSON, ou levanta `MarketDataUnavailableError`.
 
-    Uma porta só para todas as falhas de fora — timeout, DNS, 5xx, 4xx, corpo
-    que não é JSON. Quem chama trata uma exceção, não seis, e o motivo real vai
-    para o log: é lá que se descobre que o token venceu ou que o plano mudou.
+    Uma porta só para todas as falhas de fora — timeout, DNS, 5xx, 4xx, corpo que
+    não é JSON. O motivo real vai para o log.
     """
     try:
         response = await client.get(url, params=params, headers=headers)
@@ -107,9 +103,8 @@ async def get_json(
 def to_decimal(value: object) -> Decimal | None:
     """Número do provedor para `Decimal`, ou `None` se não for número.
 
-    Passa por `str` de propósito: a Twelve Data manda `"337.079987"` e a BRAPI
-    manda `48.61` como float do JSON, e `Decimal(float)` arrastaria o erro de
-    representação do double para dentro da coluna `NUMERIC`.
+    Passa por `str` de propósito: a BRAPI manda float do JSON, e `Decimal(float)`
+    arrastaria o erro de representação do double para dentro do `NUMERIC`.
     """
     if value is None or isinstance(value, bool):
         return None

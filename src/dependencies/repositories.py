@@ -35,8 +35,8 @@ def get_balance_repository(session: AsyncSession = Depends(get_session)) -> Bala
 
 
 def get_investment_repository(session: AsyncSession = Depends(get_session)) -> InvestmentRepository:
-    """Traz junto o catálogo global de ativos: as duas metades vivem na mesma
-    unidade de trabalho, e cadastrar uma posição pode criar o ativo dela."""
+    """Traz junto o catálogo global de ativos: cadastrar uma posição pode criar o
+    ativo dela, na mesma unidade de trabalho."""
     return InvestmentRepository(session)
 
 

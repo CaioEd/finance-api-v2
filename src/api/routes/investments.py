@@ -98,11 +98,8 @@ async def create_investment(
     user: User = Depends(get_current_user),
     service: InvestmentService = Depends(get_investment_service),
 ) -> InvestmentOut:
-    """Cadastrar **não** lança nada: declara uma posição que já existe.
-
-    A compra feita há dois anos não pode cair como despesa do mês corrente.
-    Para registrar dinheiro saindo da conta agora, use `/contributions`.
-    """
+    """Cadastrar **não** lança nada: declara uma posição que já existe. Para
+    registrar dinheiro saindo da conta agora, use `/contributions`."""
     investment = await service.create(user, data)
     return InvestmentOut.model_validate(investment)
 
@@ -143,9 +140,8 @@ async def search_assets(
 ) -> list[AssetSearchOut]:
     """O que se escolhe aqui é o `symbol` de um `POST /investments`.
 
-    Cripto é lista fechada de nove moedas e não consulta provedor nenhum; ação
-    brasileira vai à BRAPI e americana à Twelve Data. Provedor sem credencial
-    configurada devolve lista vazia, e não erro.
+    Cripto é lista fechada e não consulta provedor; ação brasileira vai à BRAPI e
+    americana à Twelve Data. Provedor sem credencial devolve lista vazia, não erro.
     """
     if investment_type not in VARIABLE_INCOME_TYPES:
         raise NotSearchableInvestmentTypeError()
@@ -234,10 +230,7 @@ async def register_earning(
     service: InvestmentService = Depends(get_investment_service),
 ) -> InvestmentMovementOut:
     """A categoria precisa ser de **receita**: o dividendo caiu na conta.
-
-    Reinvestir é um aporte, e é uma segunda chamada de propósito — o dinheiro
-    entrou e depois saiu, e os dois fatos aconteceram.
-    """
+    Reinvestir é um aporte, numa segunda chamada."""
     return _movement_out(await service.register_earning(user, investment_id, data))
 
 

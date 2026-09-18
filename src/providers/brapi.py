@@ -5,14 +5,12 @@ Endpoint de cotação conforme `docs/brapi_api.md`:
 lendo `results[0].data`.
 
 **Um ativo por requisição.** Não é escolha: o plano gratuito recusa dois ou mais
-(`QUOTES_PER_REQUEST_EXCEEDED`), e o teto é 20 requisições por minuto com
-concorrência 1. Por isso `quote` é singular e não existe `quotes` — uma
-assinatura plural convidaria quem chama a montar um lote que o provedor recusa,
-e a recusa só apareceria em produção.
+(`QUOTES_PER_REQUEST_EXCEEDED`), e o teto é 20 por minuto. Por isso `quote` é
+singular e não existe `quotes` — uma assinatura plural convidaria a montar um
+lote que o provedor recusa.
 
 A busca é `GET /api/quote/list?search=<termo>`. **Não** é `/api/available?search=`,
-que existe, responde 200 e devolve lista vazia — é o tipo de erro que só se
-descobre testando contra a API de verdade.
+que existe, responde 200 e devolve lista vazia.
 
 Cripto e os índices (CDI, SELIC, IPCA) são plano pago aqui; vêm da Twelve Data e
 do Banco Central. Ver `docs/investimentos.md`.
@@ -31,8 +29,7 @@ from providers.base import AssetHit, Quote, get_json, to_decimal
 BASE_URL = "https://brapi.dev/api"
 CURRENCY = "BRL"
 
-MAX_SYMBOLS_PER_REQUEST = 1
-"""O limite do plano gratuito, escrito onde quem for agrupar o veja."""
+MAX_SYMBOLS_PER_REQUEST = 1  # o limite do plano gratuito
 
 SEARCH_LIMIT = 10
 
@@ -42,7 +39,7 @@ class BrapiClient:
     """Cliente sem estado: a sessão HTTP entra por parâmetro.
 
     O `AsyncClient` é do processo (mora no `app.state`), para as conexões serem
-    reaproveitadas entre rodadas do agendador em vez de reabertas a cada ativo.
+    reaproveitadas entre rodadas em vez de reabertas a cada ativo.
     """
 
     http: httpx.AsyncClient
@@ -55,9 +52,8 @@ class BrapiClient:
     async def quote(self, symbol: str) -> Quote | None:
         """A cotação de **um** papel; `None` quando a BRAPI não conhece o símbolo.
 
-        `None` e não exceção: símbolo que não existe é resposta legítima do
-        provedor, e o agendador precisa distinguir isso de "o provedor caiu" —
-        no primeiro caso não adianta tentar de novo na próxima rodada.
+        `None` e não exceção: o agendador precisa distinguir símbolo inexistente
+        de "o provedor caiu", porque só o segundo vale tentar de novo.
         """
         payload = await get_json(
             self.http,
@@ -86,9 +82,8 @@ class BrapiClient:
     async def search(self, term: str, *, limit: int = SEARCH_LIMIT) -> list[AssetHit]:
         """Papéis cujo código ou nome casem com o termo.
 
-        O `close` vem de graça nesta resposta e é aproveitado: a tela de busca
-        mostra o preço sem uma segunda requisição por linha — que, a 20 por
-        minuto, seria uma busca por minuto.
+        O `close` vem de graça nesta resposta e é aproveitado: a tela mostra o
+        preço sem uma segunda requisição por linha.
         """
         payload = await get_json(
             self.http,
@@ -119,9 +114,8 @@ def _hit_from(row: dict[str, Any]) -> AssetHit | None:
 def _parse_instant(value: object) -> datetime | None:
     """`"2026-09-18T13:16:30.000Z"` para um `datetime` ciente.
 
-    O `Z` é trocado por `+00:00` porque `fromisoformat` só passou a aceitá-lo no
-    3.11 e a coluna é `TIMESTAMPTZ` — um instante ingênuo aqui viraria
-    comparação impossível lá na frente, e o ruff (`DTZ`) barra isso no código.
+    A coluna é `TIMESTAMPTZ`: um instante ingênuo aqui viraria comparação
+    impossível lá na frente, e o ruff (`DTZ`) barra isso no código.
     """
     if not isinstance(value, str):
         return None

@@ -6,17 +6,15 @@ exige sessão, relógio de sistema nem rede.
 
 ## É estimativa, e está escrito
 
-O número que sai daqui **não é o extrato do banco**. Ele usa a última leitura do
+O número que sai daqui **não é o extrato do banco**: usa a última leitura do
 índice projetada para o ano inteiro, capitaliza por dia corrido e não conhece
-feriado, imposto de renda nem carência. Para uma tela de patrimônio isso é o
-suficiente e é honesto; para conferir resgate, não é — e a alternativa seria
-embutir o calendário da ANBIMA e a tabela regressiva do IR num app de finanças
-pessoais.
+feriado, imposto de renda nem carência. Para uma tela de patrimônio basta; para
+conferir resgate, não.
 
 ## Uma taxa efetiva, quatro modalidades
 
-Cada índice contrata de um jeito, e o primeiro passo é reduzir os quatro a um
-número só: a taxa anual efetiva daquela posição.
+Cada índice contrata de um jeito, e o primeiro passo é reduzir os quatro à taxa
+anual efetiva daquela posição.
 
 | Índice | Contrato | Taxa efetiva |
 |---|---|---|
@@ -30,12 +28,10 @@ de 4% com spread de 5,8% dá 10,03% ao ano, não 9,8%.
 
 ## O acrual anda em dia cheio
 
-`accrue` recebe **dias corridos** e nunca uma fração deles. O agendador roda a
-cada 15 minutos, e capitalizar 15 minutos de juro sobre uma coluna de duas casas
-somaria zero toda vez: `R$ 5.000` a 10% ao ano rende `R$ 0,014` no período, que
-arredonda para nada. Rodadas dentro do mesmo dia não mexem no valor, e a
-primeira rodada de cada dia capitaliza o dia inteiro — que é como uma conta
-remunerada funciona de verdade.
+`accrue` recebe **dias corridos** e nunca uma fração deles: capitalizar 15
+minutos de juro sobre uma coluna de duas casas somaria zero toda vez (`R$ 5.000`
+a 10% ao ano rende `R$ 0,014` no período). A primeira rodada de cada dia
+capitaliza o dia inteiro; as demais não mexem no valor.
 """
 
 from __future__ import annotations
@@ -45,15 +41,14 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from models.investment import RateIndex
 
+# Dia corrido, não dia útil: o expoente já foi para `providers.bcb.annualize`, e
+# misturar as duas bases aqui contaria os 252 dias úteis duas vezes.
 DAYS_PER_YEAR = Decimal(365)
-"""Dia corrido, não dia útil: o expoente já foi para `providers.bcb.annualize`,
-que converte a série do SGS em taxa ao ano. Misturar as duas bases aqui contaria
-os 252 dias úteis duas vezes."""
 
 CENTS = Decimal("0.01")
 
+# Os índices em que `rate_percent` é percentual do índice — ver `RateIndex`.
 PERCENT_OF_INDEX = frozenset({RateIndex.CDI, RateIndex.SELIC})
-"""Os índices em que `rate_percent` é percentual do índice — ver `RateIndex`."""
 
 
 def effective_annual_percent(
@@ -63,10 +58,8 @@ def effective_annual_percent(
 ) -> Decimal | None:
     """A taxa anual efetiva da posição, em porcento.
 
-    `None` quando o índice é preciso e não se sabe qual é ele: sem a leitura do
-    Banco Central não há o que capitalizar, e chutar zero afirmaria que o
-    dinheiro parou de render. O prefixado nunca devolve `None` — a taxa dele é
-    a contratada, e não depende de ninguém.
+    `None` quando o índice é preciso e não se sabe qual é ele: chutar zero
+    afirmaria que o dinheiro parou de render. O prefixado nunca devolve `None`.
     """
     if index is RateIndex.PREFIXED:
         return rate_percent
@@ -85,9 +78,8 @@ def effective_annual_percent(
 def accrue(value: Decimal, annual_percent: Decimal, days: int) -> Decimal:
     """`value` capitalizado por `days` dias corridos, arredondado ao centavo.
 
-    Devolve o próprio valor quando `days` não é positivo: rodada dentro do mesmo
-    dia não rende, e data no futuro (relógio torto, aplicação lançada para
-    amanhã) não pode descontar juro de ninguém.
+    `days` não positivo devolve o próprio valor: rodada no mesmo dia não rende, e
+    data no futuro não pode descontar juro de ninguém.
     """
     if days <= 0:
         return value
@@ -98,5 +90,4 @@ def accrue(value: Decimal, annual_percent: Decimal, days: int) -> Decimal:
 
 
 def days_between(start: date, end: date) -> int:
-    """Dias corridos de `start` até `end`; negativo vira zero em `accrue`."""
     return (end - start).days

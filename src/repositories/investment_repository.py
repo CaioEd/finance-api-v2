@@ -4,15 +4,11 @@ O escopo por dono é imposto **aqui**, como nos demais repositórios: toda
 consulta de posição nasce de `Investment.user_id == user_id`, e não existe
 método que alcance a posição de outra pessoa.
 
-O catálogo (`investment_assets`) é a exceção deliberada, e é global de
-propósito: a cotação da PETR4 não é de ninguém. Nenhum método dele recebe
-`user_id` porque não há o que filtrar — e nenhum devolve posição, então não há
-como vazar por ele o que outra pessoa tem.
+O catálogo (`investment_assets`) é a exceção deliberada: a cotação da PETR4 não é
+de ninguém. Nenhum método dele recebe `user_id`, e nenhum devolve posição.
 
-Toda consulta de posição traz o ativo junto (`contains_eager`) num **LEFT**
-JOIN: renda fixa não tem ativo, e um JOIN interno sumiria com metade da
-carteira da listagem. O model declara `lazy="raise"` justamente para que faltar
-o eager load falhe aqui, e não no meio da serialização.
+Toda consulta de posição traz o ativo junto (`contains_eager`) num **LEFT** JOIN:
+renda fixa não tem ativo, e um JOIN interno sumiria com metade da carteira.
 """
 
 from __future__ import annotations
@@ -42,8 +38,8 @@ from models.investment import (
 
 ZERO = Decimal("0.00")
 
+# O mesmo tipo da coluna, para o zero do `coalesce` não virar `INTEGER`.
 MONEY = Numeric(MONEY_MAX_DIGITS, MONEY_DECIMAL_PLACES)
-"""O mesmo tipo da coluna, para o zero do `coalesce` não virar `INTEGER`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,11 +62,8 @@ class TypeTotals:
 
 
 def _conditions(user_id: UUID, filters: InvestmentFilters) -> list[ColumnElement[bool]]:
-    """Uma função só para os dois lados da paginação.
-
-    A contagem precisa exatamente do mesmo `WHERE` da listagem; duplicar a
-    construção é como o `total` acaba mentindo sobre o número de páginas.
-    """
+    """Uma função só para os dois lados da paginação: a contagem precisa do mesmo
+    `WHERE` da listagem, senão o `total` mente sobre o número de páginas."""
     conditions: list[ColumnElement[bool]] = [Investment.user_id == user_id]
     if filters.investment_class is not None:
         # A classe não é coluna — é derivada do tipo (ver `models.investment`),
@@ -126,12 +119,9 @@ class InvestmentRepository:
     ) -> Investment | None:
         """Devolve `None` para posição de terceiro — que a borda traduz em 404.
 
-        Não é `session.get`: aquele traria a linha de qualquer dono, e o escopo
-        passaria a depender de quem chamou lembrar de conferir.
-
-        `lock=True` trava só a posição, até o commit: dois aportes simultâneos
-        na mesma posição não podem calcular o preço médio sobre a mesma
-        quantidade antiga e gravar um por cima do outro.
+        Não é `session.get`: aquele traria a linha de qualquer dono. `lock=True`
+        trava a posição até o commit, para dois aportes simultâneos não calcularem
+        o preço médio sobre a mesma quantidade antiga.
         """
         statement = _with_asset().where(
             Investment.id == investment_id, Investment.user_id == user_id
@@ -150,10 +140,8 @@ class InvestmentRepository:
     async def totals_by_type(self, user_id: UUID) -> list[TypeTotals]:
         """Uma varredura para a tela inteira de resumo.
 
-        Agrupa por tipo e não por classe: a classe se obtém somando os tipos
-        dela em Python, enquanto o caminho contrário exigiria uma segunda
-        consulta sobre exatamente as mesmas linhas — que ainda poderia observar
-        um estado diferente se o agendador gravasse entre as duas.
+        Agrupa por tipo e não por classe: a classe se obtém somando os tipos dela
+        em Python, e o caminho contrário custaria uma segunda consulta.
         """
         statement = (
             select(
@@ -196,10 +184,8 @@ class InvestmentRepository:
 def translate_integrity_error(exc: IntegrityError) -> DomainError:
     """Traduz a violação da FK do ativo, vista de quem grava a posição.
 
-    O serviço já resolveu o ativo antes de gravar, então chegar aqui significa
-    que ele sumiu entre a resolução e o INSERT. Quem decide é o banco, porque
-    um SELECT prévio sempre terá essa janela — a checagem existe para a recusa
-    ser legível, não para ser autoridade.
+    Chegar aqui significa que o ativo sumiu entre a resolução e o INSERT. Quem
+    decide é o banco: um SELECT prévio sempre teria essa janela.
     """
     detail = str(exc.orig)
     if FK_INVESTMENT_ASSET in detail:

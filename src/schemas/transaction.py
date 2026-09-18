@@ -82,14 +82,10 @@ class TransactionOut(BaseModel):
     recurring_transaction_id: UUID | None = None
     """A recorrência ligada ao lançamento; `None` no avulso."""
 
+    # O investimento que originou o lançamento; `None` no lançamento comum, e
+    # também depois de a posição ser excluída (`ON DELETE SET NULL`). Sai no
+    # contrato para o extrato marcar a linha e levar de volta à posição.
     investment_id: UUID | None = None
-    """O investimento que originou o lançamento; `None` no lançamento comum.
-
-    Aporte é despesa e provento é receita, gravados por `/investments`. Sai no
-    contrato para que o extrato possa marcar a linha e levar de volta à
-    posição — e continua `None` depois de a posição ser excluída, porque o
-    dinheiro se moveu mesmo assim (`ON DELETE SET NULL`).
-    """
 
     created_at: datetime
 

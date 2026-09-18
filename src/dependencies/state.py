@@ -51,11 +51,7 @@ def get_client_ip(request: Request) -> str:
 
 
 def get_market_service(request: Request) -> MarketService:
-    """Os clientes de cotação do processo, montados na subida.
-
-    Vêm do `app.state` como os demais objetos sem I/O de requisição: a sessão
-    HTTP é uma só para o processo, e criar uma por requisição pagaria o
-    handshake TLS em toda busca que o usuário digitasse.
-    """
+    """Os clientes de cotação do processo, montados na subida: a sessão HTTP é
+    uma só, e criar uma por requisição pagaria o handshake TLS em cada busca."""
     service: MarketService = request.app.state.market
     return service

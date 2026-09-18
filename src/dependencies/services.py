@@ -138,11 +138,8 @@ def get_investment_service(
     transactions: TransactionRepository = Depends(get_transaction_repository),
     clock: Clock = Depends(get_clock),
 ) -> InvestmentService:
-    """Os lançamentos entram como `TransactionSink`: aporte e provento só criam.
-
-    O aporte grava a despesa e a posição no mesmo commit — por isso a sessão é
-    a mesma, e não uma chamada ao serviço de lançamentos.
-    """
+    """O aporte grava a despesa e a posição no mesmo commit — por isso a sessão é
+    a mesma, e não uma chamada ao serviço de lançamentos."""
     return InvestmentService(
         unit_of_work=session,
         investments=investments,
