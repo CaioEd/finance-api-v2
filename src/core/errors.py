@@ -173,6 +173,45 @@ class RecurringTransactionNotFoundError(NotFoundError):
     message = "Recorrência não encontrada."
 
 
+class InvalidCategoryKindError(UnprocessableError):
+    code = "invalid_category_kind"
+    message = "A categoria escolhida é do tipo errado para este lançamento."
+    # 422 e não 404: a categoria existe e é visível; o que não serve é a
+    # combinação dela com esta rota. Categoria de receita num aporte faria o
+    # dinheiro investido *entrar* no saldo em vez de sair.
+
+
+class InvestmentNotFoundError(NotFoundError):
+    code = "investment_not_found"
+    message = "Investimento não encontrado."
+
+
+class InvalidInvestmentAssetError(UnprocessableError):
+    code = "invalid_investment_asset"
+    message = "Ativo inexistente ou indisponível no provedor de cotações."
+    # 422 como `InvalidCategoryError`: o recurso da requisição é a posição, e
+    # ela não é o que está faltando.
+
+
+class NotSearchableInvestmentTypeError(UnprocessableError):
+    code = "investment_type_not_searchable"
+    message = "Só renda variável tem ativo a pesquisar."
+    # CDB, LCI, Tesouro e poupança não têm símbolo: não há provedor a consultar,
+    # e uma lista vazia faria a tela parecer quebrada em vez de mal pedida.
+
+
+class InvalidInvestmentFieldsError(UnprocessableError):
+    code = "invalid_investment_fields"
+    message = "Campos incompatíveis com o tipo do investimento."
+    # Gravar em silêncio o que não se aplica deixaria a posição com campos da
+    # outra metade da tabela.
+
+    def __init__(self, fields: list[str]) -> None:
+        super().__init__(
+            details=[{"field": field, "message": "não se aplica a este tipo"} for field in fields]
+        )
+
+
 class InvalidPeriodError(UnprocessableError):
     code = "invalid_period"
     message = "O início do período não pode ser posterior ao fim."

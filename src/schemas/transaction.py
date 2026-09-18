@@ -82,6 +82,11 @@ class TransactionOut(BaseModel):
     recurring_transaction_id: UUID | None = None
     """A recorrência ligada ao lançamento; `None` no avulso."""
 
+    # O investimento que originou o lançamento; `None` no lançamento comum, e
+    # também depois de a posição ser excluída (`ON DELETE SET NULL`). Sai no
+    # contrato para o extrato marcar a linha e levar de volta à posição.
+    investment_id: UUID | None = None
+
     created_at: datetime
 
     @field_serializer("amount")

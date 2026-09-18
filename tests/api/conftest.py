@@ -5,7 +5,7 @@ o teste. É o que permite `pytest tests/api` numa máquina sem Docker, e é a
 razão de esta suíte existir separada de `tests/integration/`.
 
 O isolamento também é diferente: lá cada teste roda numa transação que sofre
-rollback; aqui cada teste ganha um banco novo. Em memória, criar as quatro
+rollback; aqui cada teste ganha um banco novo. Em memória, criar as
 tabelas custa menos que abrir a transação, e em troca o código sob teste comita
 de verdade, sem savepoint nenhum entre ele e o banco.
 """
@@ -61,6 +61,8 @@ def settings() -> Settings:
         # Desligado: abriria sessão contra o `Database` que o fixture ainda troca.
         # Os testes chamam `register_due_recurrences` direto.
         recurring_scheduler_enabled=False,
+        # Idem para o de cotações — e ele ainda sairia à rede a cada rodada.
+        investment_scheduler_enabled=False,
     )
 
 

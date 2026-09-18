@@ -13,7 +13,9 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
+import httpx
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -27,7 +29,13 @@ from core.errors import register_exception_handlers
 from core.rate_limit import ClientIpResolver, build_rate_limiter
 from core.scheduler import PeriodicJob
 from core.security import PasswordHasher, TokenCodec
+from jobs.investment_quotes import MarketProviders, QuoteBudget, refresh_investment_values
 from jobs.recurring_transactions import register_due_recurrences
+from providers.base import DEFAULT_TIMEOUT_SECONDS
+from providers.bcb import BcbClient
+from providers.brapi import BrapiClient
+from providers.twelve_data import TwelveDataClient
+from services.market_service import MarketService
 from version import __version__
 
 logger = logging.getLogger(__name__)
@@ -37,14 +45,22 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings: Settings = app.state.settings
     app.state.database = Database(settings)
+    # Uma sessão HTTP para o processo inteiro: os provedores de cotação são
+    # consultados a cada 15 minutos, e abrir conexão por consulta pagaria o
+    # handshake TLS toda vez. Fecha no `finally`, depois dos trabalhos.
+    app.state.http = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS)
+    app.state.market = _market_service(app.state.http, settings)
     recurrences = _recurring_scheduler(app, settings)
+    quotes = _quote_scheduler(app, settings)
     logger.info("aplicação iniciada em ambiente=%s", settings.environment)
     try:
         yield
     finally:
         # Antes do `dispose`, para uma rodada em curso não ficar sem conexão.
-        if recurrences is not None:
-            await recurrences.stop()
+        for job in (recurrences, quotes):
+            if job is not None:
+                await job.stop()
+        await app.state.http.aclose()
         await app.state.database.dispose()
         logger.info("aplicação encerrada")
 
@@ -57,6 +73,50 @@ def _recurring_scheduler(app: FastAPI, settings: Settings) -> PeriodicJob | None
         lambda: register_due_recurrences(app.state.database, app.state.clock),
         interval_seconds=settings.recurring_scheduler_interval_seconds,
         name="recorrências",
+    )
+    job.start()
+    return job
+
+
+def _providers(http: httpx.AsyncClient, settings: Settings) -> MarketProviders:
+    """Os clientes que têm credencial. Sem token, o provedor não existe.
+
+    Recusar a subida por falta de chave de cotação seria desproporcional: o resto
+    da aplicação funciona sem ela, e é assim que a suíte roda.
+    """
+    return MarketProviders(
+        brapi=BrapiClient(http=http, token=settings.brapi_token) if settings.brapi_token else None,
+        twelve_data=(
+            TwelveDataClient(http=http, api_key=settings.twelve_data_api_key)
+            if settings.twelve_data_api_key
+            else None
+        ),
+        # O Banco Central é público: não há credencial que possa faltar.
+        bcb=BcbClient(http=http),
+    )
+
+
+def _market_service(http: httpx.AsyncClient, settings: Settings) -> MarketService:
+    providers = _providers(http, settings)
+    return MarketService(brapi=providers.brapi, twelve_data=providers.twelve_data)
+
+
+def _quote_scheduler(app: FastAPI, settings: Settings) -> PeriodicJob | None:
+    """Agendador de cotações. Lê banco e relógio do `app.state` a cada rodada."""
+    if not settings.investment_scheduler_enabled:
+        return None
+    budget = QuoteBudget(
+        brapi_symbols=settings.brapi_max_symbols_per_run,
+        twelve_data_symbols=settings.twelve_data_max_symbols_per_run,
+        accrual_batch=settings.investment_accrual_batch_size,
+        rate_max_age=timedelta(hours=settings.investment_rate_max_age_hours),
+    )
+    job = PeriodicJob(
+        lambda: refresh_investment_values(
+            app.state.database, app.state.clock, _providers(app.state.http, settings), budget
+        ),
+        interval_seconds=settings.investment_scheduler_interval_seconds,
+        name="cotações",
     )
     job.start()
     return job

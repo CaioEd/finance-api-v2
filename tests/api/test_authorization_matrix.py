@@ -205,6 +205,63 @@ def a_recurring_transaction_of(client: ApiClient, user: RegisteredUser) -> str:
     return f"/api/v1/recurring-transactions/{response.json()['id']}"
 
 
+def an_income_category_id_of(client: ApiClient, user: RegisteredUser) -> str:
+    """Provento e aporte precisam de categorias de tipos opostos.
+
+    Uma so nao serve: `/earnings` recusa categoria de despesa e
+    `/contributions` recusa a de receita, e o teste passaria a medir esse 422
+    em vez da autorizacao.
+    """
+    response = client.post(
+        "/api/v1/categories", headers=user.auth, json={"name": "Dividendos", "kind": "income"}
+    )
+    response.raise_for_status()
+    return str(response.json()["id"])
+
+
+AN_INVESTMENT = {
+    "type": "br_stock",
+    "symbol": "PETR4",
+    "quantity": "10",
+    "average_price": "30.00",
+}
+
+
+def an_investment_id_of(client: ApiClient, user: RegisteredUser) -> str:
+    response = client.post("/api/v1/investments", headers=user.auth, json=dict(AN_INVESTMENT))
+    response.raise_for_status()
+    return str(response.json()["id"])
+
+
+def an_investment_of(client: ApiClient, user: RegisteredUser) -> str:
+    return f"/api/v1/investments/{an_investment_id_of(client, user)}"
+
+
+def a_contribution_of(client: ApiClient, user: RegisteredUser) -> str:
+    return f"{an_investment_of(client, user)}/contributions"
+
+
+def a_contribution_body_of(client: ApiClient, user: RegisteredUser) -> dict[str, Any]:
+    return {"amount": "100.00", "category_id": a_category_id_of(client, user), "quantity": "2"}
+
+
+def an_earning_of(client: ApiClient, user: RegisteredUser) -> str:
+    return f"{an_investment_of(client, user)}/earnings"
+
+
+def an_earning_body_of(client: ApiClient, user: RegisteredUser) -> dict[str, Any]:
+    return {"amount": "12.50", "category_id": an_income_category_id_of(client, user)}
+
+
+def a_crypto_search(_client: ApiClient, _user: RegisteredUser) -> str:
+    """`type` é obrigatório na busca; sem ele a rota responderia 422 ao dono.
+
+    Para o anônimo o caminho nu basta: a autenticação decide antes de o
+    parâmetro ser lido.
+    """
+    return "/api/v1/investments/assets?type=crypto"
+
+
 DATE_RANGE_QUERY = "occurred_from=2026-01-01&occurred_to=2026-12-31"
 
 
@@ -279,6 +336,34 @@ PROTECTED_ROUTES = [
         "DELETE",
         "/api/v1/recurring-transactions/{recurring_transaction_id}",
         setup=a_recurring_transaction_of,
+    ),
+    ProtectedRoute("GET", "/api/v1/investments"),
+    ProtectedRoute("POST", "/api/v1/investments", body=dict(AN_INVESTMENT)),
+    ProtectedRoute("GET", "/api/v1/investments/summary"),
+    # Cripto é lista fechada e não sai à rede: é o tipo que a matriz pode
+    # exercitar sem provedor configurado nem requisição para fora.
+    ProtectedRoute("GET", "/api/v1/investments/assets", setup=a_crypto_search),
+    ProtectedRoute("GET", "/api/v1/investments/{investment_id}", setup=an_investment_of),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/investments/{investment_id}",
+        body={"name": "Petrobras PN"},
+        setup=an_investment_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/investments/{investment_id}", setup=an_investment_of),
+    ProtectedRoute(
+        "POST",
+        "/api/v1/investments/{investment_id}/contributions",
+        body={"amount": "100.00", "category_id": NOBODY, "quantity": "2"},
+        setup=a_contribution_of,
+        body_setup=a_contribution_body_of,
+    ),
+    ProtectedRoute(
+        "POST",
+        "/api/v1/investments/{investment_id}/earnings",
+        body={"amount": "12.50", "category_id": NOBODY},
+        setup=an_earning_of,
+        body_setup=an_earning_body_of,
     ),
     ProtectedRoute("GET", "/api/v1/balance/current"),
     ProtectedRoute("GET", "/api/v1/balance/monthly"),

@@ -36,6 +36,7 @@ from fastapi import FastAPI
 
 from schemas.base import PatchIn
 from schemas.category import CategoryUpdateIn
+from schemas.investment import InvestmentUpdateIn
 from schemas.recurring_transaction import RecurringTransactionUpdateIn
 from schemas.transaction import TransactionUpdateIn
 from schemas.user import AdminUserUpdateIn
@@ -75,6 +76,18 @@ NOT_CRUD: set[tuple[str, str]] = {
     ("GET", "/api/v1/reports/transactions"),
     ("GET", "/api/v1/reports/balance/monthly"),
     ("GET", "/api/v1/reports/balance/range"),
+    # Resumo da carteira: agregação de leitura sobre as posições, como o saldo
+    # é sobre os lançamentos. Não há o que criar nem excluir — ver
+    # `test_investments.py`.
+    ("GET", "/api/v1/investments/summary"),
+    # Aporte e provento: ações sobre uma posição que existe, não recursos de
+    # coleção. Não há `GET /contributions/{id}` para ler de volta — o que os
+    # dois criam é lançamento, e esse tem o CRUD dele em `/transactions`.
+    ("POST", "/api/v1/investments/{investment_id}/contributions"),
+    ("POST", "/api/v1/investments/{investment_id}/earnings"),
+    # Busca de ativos: consulta ao provedor externo, não recurso guardado. Não
+    # há o que criar nem excluir — ver `test_investment_assets.py`.
+    ("GET", "/api/v1/investments/assets"),
 }
 
 
@@ -115,6 +128,22 @@ def a_recurring_transaction(client: ApiClient, user: RegisteredUser) -> Body:
         "category_id": created.json()["id"],
         "description": "Streaming",
         "day_of_month": 5,
+    }
+
+
+def an_investment(_client: ApiClient, _user: RegisteredUser) -> Body:
+    """Posição de renda variável: a metade da tabela que tem ativo e quantidade.
+
+    Renda fixa exigiria índice, taxa e data de aplicação, e as invariantes
+    parametrizadas não precisam da segunda metade para verificar o contrato —
+    o que é próprio de cada uma está em `test_investments.py`.
+    """
+    return {
+        "type": "br_stock",
+        "symbol": f"AT{suffix()[:4].upper()}",
+        "quantity": "10",
+        "average_price": "30.00",
+        "name": f"Ativo {suffix()}",
     }
 
 
@@ -207,6 +236,16 @@ RESOURCES = [
         paginated=True,
     ),
     Crud(
+        name="investimentos",
+        collection="/api/v1/investments",
+        item="/api/v1/investments/{id}",
+        create=an_investment,
+        patch={"name": "Renomeado"},
+        update_schema=InvestmentUpdateIn,
+        actor=register_user,
+        paginated=True,
+    ),
+    Crud(
         name="usuarios-admin",
         collection="/api/v1/admin/users",
         item="/api/v1/admin/users/{id}",
@@ -225,6 +264,7 @@ ROUTE_TEMPLATES = {
     "/api/v1/recurring-transactions/{id}": (
         "/api/v1/recurring-transactions/{recurring_transaction_id}"
     ),
+    "/api/v1/investments/{id}": "/api/v1/investments/{investment_id}",
     "/api/v1/admin/users/{id}": "/api/v1/admin/users/{user_id}",
 }
 """O nome do parâmetro muda de rota para rota; o molde do OpenAPI usa o de lá."""

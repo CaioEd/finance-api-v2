@@ -103,6 +103,31 @@ class Settings(BaseSettings):
     recurring_scheduler_interval_seconds: PositiveInt = 900
     """Intervalo entre rodadas; uma rodada sempre roda na subida."""
 
+    # --- Investimentos (docs/investimentos.md) -----------------------------
+    # Credencial vazia desliga o provedor: a busca devolve lista vazia e o
+    # agendador pula a etapa, em vez de a aplicação recusar subir. É o que
+    # permite rodar a suíte e um ambiente sem as chaves.
+    brapi_token: str = ""
+    twelve_data_api_key: str = ""
+
+    investment_scheduler_enabled: bool = True
+    investment_scheduler_interval_seconds: PositiveInt = 900
+
+    # Tetos por rodada, ditados pelos planos gratuitos: a BRAPI aceita um ativo
+    # por requisição e 20 por minuto (15 deixa folga para a busca do usuário); a
+    # Twelve Data dá 8 créditos por minuto — 7 símbolos mais o `USD/BRL` — e 800
+    # por dia, que a 96 rodadas diárias fecha em 768.
+    brapi_max_symbols_per_run: PositiveInt = 15
+    twelve_data_max_symbols_per_run: PositiveInt = 7
+
+    # O SGS publica uma vez por dia; reler a cada 15 min seriam 384 requisições
+    # para o mesmo número.
+    investment_rate_max_age_hours: PositiveInt = 12
+
+    # Não gasta crédito de provedor; o teto existe para a rodada não segurar uma
+    # transação longa.
+    investment_accrual_batch_size: PositiveInt = 200
+
     # --- Banco -----------------------------------------------------------
     db_echo: bool = False
     db_pool_size: int = 5

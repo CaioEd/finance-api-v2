@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -111,6 +112,15 @@ class Transaction(TimestampMixin, Base):
     )
     """A recorrência ligada ao lançamento; `None` no avulso. Só o serviço preenche."""
 
+    investment_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        # `SET NULL` como na recorrência: excluir a posição não apaga o aporte
+        # que saiu da conta. O dinheiro se moveu; o histórico não pode
+        # desaparecer com o rótulo.
+        ForeignKey("investments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         AMOUNT_CHECK,
         # Toda listagem é "os meus, do mais recente para o mais antigo", e a
@@ -120,6 +130,14 @@ class Transaction(TimestampMixin, Base):
         Index("ix_transactions_category_id", "category_id"),
         # Para o `SET NULL` ao excluir uma recorrência não varrer a tabela.
         Index("ix_transactions_recurring_transaction_id", "recurring_transaction_id"),
+        # Idem para investimento, e é também por onde se lista o que a posição
+        # movimentou. Parcial porque a esmagadora maioria dos lançamentos é comum.
+        Index(
+            "ix_transactions_investment_id",
+            "investment_id",
+            postgresql_where=text("investment_id IS NOT NULL"),
+            sqlite_where=text("investment_id IS NOT NULL"),
+        ),
     )
 
     @property
