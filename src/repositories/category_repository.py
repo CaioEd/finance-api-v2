@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.errors import CategoryInUseError, CategoryNameTakenError, ConflictError
 from models.category import Category, CategoryKind
 from models.recurring_transaction import FK_RECURRING_CATEGORY
+from models.spending_limit import FK_LIMIT_CATEGORY, SpendingLimit
 from models.transaction import FK_CATEGORY
 
 
@@ -28,6 +29,15 @@ def _visible_to(user_id: UUID) -> ColumnElement[bool]:
 class CategoryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def has_spending_limit(self, category_id: UUID) -> bool:
+        return bool(
+            await self._session.scalar(
+                select(func.count())
+                .select_from(SpendingLimit)
+                .where(SpendingLimit.category_id == category_id)
+            )
+        )
 
     async def list_visible(
         self, user_id: UUID, *, kind: CategoryKind | None = None
@@ -68,6 +78,11 @@ def translate_integrity_error(exc: IntegrityError) -> ConflictError:
     if "uq_categories_" in detail:
         return CategoryNameTakenError()
     # O outro lado das FKs: categoria ainda usada por lançamento ou recorrência.
-    if FK_CATEGORY in detail or FK_RECURRING_CATEGORY in detail:
+    if (
+        FK_CATEGORY in detail
+        or FK_RECURRING_CATEGORY in detail
+        or FK_LIMIT_CATEGORY in detail
+        or "FOREIGN KEY constraint failed" in detail  # SQLite da suíte de API
+    ):
         return CategoryInUseError()
     return ConflictError()

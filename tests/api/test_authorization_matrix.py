@@ -179,6 +179,31 @@ def a_category_of(client: ApiClient, user: RegisteredUser) -> str:
     return f"/api/v1/categories/{a_category_id_of(client, user)}"
 
 
+def a_limit_of(client: ApiClient, user: RegisteredUser) -> str:
+    response = client.post(
+        "/api/v1/spending-limits",
+        headers=user.auth,
+        json={
+            "name": "Compras",
+            "amount": "500.00",
+            "starts_on": "2026-09-20",
+            "ends_on": "2026-10-20",
+        },
+    )
+    response.raise_for_status()
+    return f"/api/v1/spending-limits/{response.json()['id']}"
+
+
+def a_goal_of(client: ApiClient, user: RegisteredUser) -> str:
+    response = client.post(
+        "/api/v1/investment-goals",
+        headers=user.auth,
+        json={"name": "Reserva", "target_amount": "10000.00"},
+    )
+    response.raise_for_status()
+    return f"/api/v1/investment-goals/{response.json()['id']}"
+
+
 def a_transaction_body_of(client: ApiClient, user: RegisteredUser) -> dict[str, Any]:
     return {"amount": "12.34", "category_id": a_category_id_of(client, user)}
 
@@ -280,6 +305,35 @@ def a_report_date_range(_client: ApiClient, _user: RegisteredUser) -> str:
 
 
 PROTECTED_ROUTES = [
+    ProtectedRoute("GET", "/api/v1/spending-limits"),
+    ProtectedRoute(
+        "POST",
+        "/api/v1/spending-limits",
+        body={
+            "name": "Compras",
+            "amount": "500.00",
+            "starts_on": "2026-09-20",
+            "ends_on": "2026-10-20",
+        },
+    ),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/spending-limits/{limit_id}",
+        body={"name": "Novo limite"},
+        setup=a_limit_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/spending-limits/{limit_id}", setup=a_limit_of),
+    ProtectedRoute("GET", "/api/v1/investment-goals"),
+    ProtectedRoute(
+        "POST", "/api/v1/investment-goals", body={"name": "Reserva", "target_amount": "10000.00"}
+    ),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/investment-goals/{goal_id}",
+        body={"name": "Novo objetivo"},
+        setup=a_goal_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/investment-goals/{goal_id}", setup=a_goal_of),
     ProtectedRoute("GET", "/api/v1/users/me"),
     ProtectedRoute("PATCH", "/api/v1/users/me", body={"first_name": "X"}),
     ProtectedRoute(

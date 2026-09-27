@@ -37,6 +37,7 @@ from fastapi import FastAPI
 from schemas.base import PatchIn
 from schemas.category import CategoryUpdateIn
 from schemas.investment import InvestmentUpdateIn
+from schemas.planning import GoalPatch, LimitPatch
 from schemas.recurring_transaction import RecurringTransactionUpdateIn
 from schemas.transaction import TransactionUpdateIn
 from schemas.user import AdminUserUpdateIn
@@ -158,6 +159,19 @@ def an_account(_client: ApiClient, _user: RegisteredUser) -> Body:
     }
 
 
+def a_limit(_client: ApiClient, _user: RegisteredUser) -> Body:
+    return {
+        "name": "Compras",
+        "amount": "500.00",
+        "starts_on": "2026-09-20",
+        "ends_on": "2026-10-20",
+    }
+
+
+def a_goal(_client: ApiClient, _user: RegisteredUser) -> Body:
+    return {"name": "Reserva", "target_amount": "10000.00"}
+
+
 # ------------------------------------------------------------------ declaração
 
 
@@ -205,6 +219,28 @@ class Crud:
 
 
 RESOURCES = [
+    Crud(
+        name="limites",
+        collection="/api/v1/spending-limits",
+        item="/api/v1/spending-limits/{id}",
+        create=a_limit,
+        patch={"name": "Novo limite"},
+        update_schema=LimitPatch,
+        actor=register_user,
+        paginated=False,
+        item_read=False,
+    ),
+    Crud(
+        name="objetivos",
+        collection="/api/v1/investment-goals",
+        item="/api/v1/investment-goals/{id}",
+        create=a_goal,
+        patch={"name": "Novo objetivo"},
+        update_schema=GoalPatch,
+        actor=register_user,
+        paginated=False,
+        item_read=False,
+    ),
     Crud(
         name="categorias",
         collection="/api/v1/categories",
@@ -259,6 +295,8 @@ RESOURCES = [
 ]
 
 ROUTE_TEMPLATES = {
+    "/api/v1/spending-limits/{id}": "/api/v1/spending-limits/{limit_id}",
+    "/api/v1/investment-goals/{id}": "/api/v1/investment-goals/{goal_id}",
     "/api/v1/categories/{id}": "/api/v1/categories/{category_id}",
     "/api/v1/transactions/{id}": "/api/v1/transactions/{transaction_id}",
     "/api/v1/recurring-transactions/{id}": (
