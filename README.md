@@ -19,6 +19,7 @@ recorrências mensais, os saldos agregados e a exportação em PDF de todos eles
 | 6 | Rotas administrativas e endurecimento | parcial — CRUD de usuários e limite de tentativas no login entregues |
 | — | Receitas e despesas recorrentes, com agendador em segundo plano | concluída |
 | — | Investimentos: renda fixa e variável, cotação externa e agendador de 15 min | back-end concluído |
+| — | Orçamentos por categoria ou período e objetivos de investimentos | concluída |
 
 ## Tech stack e requisitos
 

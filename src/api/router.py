@@ -16,6 +16,7 @@ from api.routes import (
     balance,
     categories,
     investments,
+    planning,
     recurring_transactions,
     reports,
     transactions,
@@ -30,6 +31,7 @@ api_router.include_router(categories.router)
 api_router.include_router(transactions.router)
 api_router.include_router(recurring_transactions.router)
 api_router.include_router(investments.router)
+api_router.include_router(planning.router)
 api_router.include_router(balance.router)
 api_router.include_router(reports.router)
 api_router.include_router(admin_users.router)

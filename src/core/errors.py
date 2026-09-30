@@ -143,7 +143,7 @@ class CategoryNameTakenError(ConflictError):
 
 class CategoryInUseError(ConflictError):
     code = "category_in_use"
-    message = "Esta categoria tem lançamentos ou recorrências e não pode ser excluída."
+    message = "Esta categoria tem lançamentos, recorrências ou orçamentos e não pode ser excluída."
     # Apagar os lançamentos junto seria perder histórico financeiro para
     # remover um rótulo, e apagar a recorrência pararia um lançamento mensal.
 

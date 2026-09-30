@@ -26,7 +26,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.errors import ForbiddenError, NotFoundError
+from core.errors import ForbiddenError, NotFoundError, UnprocessableError
 from models.category import Category, CategoryKind
 from models.user import User
 from repositories.category_repository import CategoryRepository, translate_integrity_error
@@ -55,6 +55,14 @@ class CategoryService:
 
     async def update(self, user: User, category_id: UUID, data: CategoryUpdateIn) -> Category:
         category = await self._mutable_or_fail(user, category_id)
+        if (
+            category.kind == CategoryKind.EXPENSE
+            and data.kind == CategoryKind.INCOME
+            and await self._categories.has_spending_limit(category_id)
+        ):
+            raise UnprocessableError(
+                "Remova os orçamentos desta categoria antes de torná-la receita."
+            )
         for field, value in data.changes().items():
             setattr(category, field, value)
         await self._commit()

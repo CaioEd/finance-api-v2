@@ -12,7 +12,7 @@ dependencies = [
     "email-validator>=2.2",
     "pyjwt>=2.9",
     "argon2-cffi>=23.1",
-    "sqlalchemy[asyncio]>=2.0.36",
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "asyncpg>=0.30",
     "alembic>=1.14",
     # Relatórios em PDF; só core/pdf.py importa.
@@ -30,6 +30,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
+    "tzdata>=2026.1; sys_platform == 'win32'",
     # O TestClient do Starlette fala httpx2; com só o httpx ele ainda funciona,
     # mas avisa que a ponte está depreciada. Quem usa é a suíte de API.
     "httpx2>=2.12",
