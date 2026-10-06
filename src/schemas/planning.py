@@ -60,8 +60,23 @@ class GoalPatch(PatchIn):
     clear_target_on: bool | None = None
 
 
+class GlobalGoalIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=120)
+    target_amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    target_on: date | None = None
+
+
+class GlobalGoalPatch(PatchIn):
+    name: str | None = Field(None, min_length=2, max_length=120)
+    target_amount: Decimal | None = Field(None, gt=0, max_digits=14, decimal_places=2)
+    target_on: date | None = None
+    clear_target_on: bool | None = None
+
+
 class GoalOut(BaseModel):
     id: UUID
+    is_global: bool
     name: str
     target_amount: Amount
     target_on: date | None

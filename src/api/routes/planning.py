@@ -86,6 +86,7 @@ async def goal_out(repo: PlanningRepository, item: InvestmentGoal, user_id: UUID
     current = investment.current_value if investment else await repo.portfolio_value(user_id)
     return GoalOut(
         id=item.id,
+        is_global=item.is_global,
         name=item.name,
         target_amount=item.target_amount,
         target_on=item.target_on,

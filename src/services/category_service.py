@@ -53,6 +53,12 @@ class CategoryService:
         await self._commit()
         return category
 
+    async def create_global(self, data: CategoryCreateIn) -> Category:
+        category = Category(user_id=None, name=data.name, kind=data.kind)
+        self._categories.add(category)
+        await self._commit()
+        return category
+
     async def update(self, user: User, category_id: UUID, data: CategoryUpdateIn) -> Category:
         category = await self._mutable_or_fail(user, category_id)
         if (
