@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from api.routes import (
+    admin_planning,
     admin_users,
     auth,
     balance,
@@ -35,3 +36,4 @@ api_router.include_router(planning.router)
 api_router.include_router(balance.router)
 api_router.include_router(reports.router)
 api_router.include_router(admin_users.router)
+api_router.include_router(admin_planning.router)

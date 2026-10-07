@@ -22,8 +22,8 @@ class InvestmentGoal(TimestampMixin, Base):
     id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), primary_key=True, default=uuid4, server_default=func.gen_random_uuid()
     )
-    user_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     investment_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("investments.id", ondelete="SET NULL"), nullable=True
@@ -31,3 +31,7 @@ class InvestmentGoal(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     target_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     target_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    @property
+    def is_global(self) -> bool:
+        return self.user_id is None

@@ -8,7 +8,7 @@ from core.errors import NotFoundError, UnprocessableError
 from models.investment_goal import InvestmentGoal
 from models.spending_limit import SpendingLimit
 from repositories.planning_repository import PlanningRepository
-from schemas.planning import GoalIn, GoalPatch, LimitIn, LimitPatch
+from schemas.planning import GlobalGoalIn, GlobalGoalPatch, GoalIn, GoalPatch, LimitIn, LimitPatch
 
 
 class PlanningService:
@@ -83,6 +83,34 @@ class PlanningService:
 
     async def delete_goal(self, user_id: UUID, goal_id: UUID) -> None:
         item = await self.repo.goal(user_id, goal_id)
+        if item is None:
+            raise NotFoundError()
+        await self.repo.session.delete(item)
+        await self.repo.session.commit()
+
+    async def create_global_goal(self, data: GlobalGoalIn) -> InvestmentGoal:
+        item = InvestmentGoal(user_id=None, **data.model_dump())
+        self.repo.session.add(item)
+        await self.repo.session.commit()
+        await self.repo.session.refresh(item)
+        return item
+
+    async def update_global_goal(self, goal_id: UUID, data: GlobalGoalPatch) -> InvestmentGoal:
+        item = await self.repo.global_goal(goal_id)
+        if item is None:
+            raise NotFoundError()
+        for key, value in data.changes().items():
+            if key == "clear_target_on":
+                if value:
+                    item.target_on = None
+            else:
+                setattr(item, key, value)
+        await self.repo.session.commit()
+        await self.repo.session.refresh(item)
+        return item
+
+    async def delete_global_goal(self, goal_id: UUID) -> None:
+        item = await self.repo.global_goal(goal_id)
         if item is None:
             raise NotFoundError()
         await self.repo.session.delete(item)

@@ -1,15 +1,16 @@
 # Cobertura de testes
 
-Medida em **2026-09-27** com a suíte completa (`pytest --cov`) contra o PostgreSQL de teste.
+Medida em **2026-10-06** com a suíte completa (`pytest --cov`) contra o PostgreSQL de teste.
 Os limites de gastos e objetivos têm testes de contrato HTTP, regra de cálculo, isolamento por
-usuário e migração. Os números abaixo descrevem o estado desta branch.
+usuário e migração. O catálogo global do painel também cobre CRUD, autorização e visibilidade
+para todos os usuários. Os números abaixo descrevem o estado desta branch.
 
 | | |
 |---|---|
-| **Cobertura total** | **98%** — 3952 linhas executáveis, 74 sem cobertura |
-| Suíte | 1060 testes coletados: 447 unitários, 474 de API, 139 de integração |
-| Sem Postgres | 921 testes unitários e de API |
-| Endpoints | 53 de 53 exercitados (100%) |
+| **Cobertura total** | **98%** — 4048 linhas executáveis, 74 sem cobertura |
+| Suíte | 1124 testes coletados: 447 unitários, 538 de API, 139 de integração |
+| Sem Postgres | 985 testes unitários e de API |
+| Endpoints | 61 de 61 exercitados (100%) |
 
 Para o papel de cada suíte e como rodá-la, veja `testes.md`. A medição usa
 `concurrency = ["thread", "greenlet"]` no `pyproject.toml`, necessária para
@@ -19,7 +20,8 @@ cobrir o código async que executa na ponte do SQLAlchemy.
 
 | Módulo (`src/`) | Linhas | Cobertura |
 |---|---:|---:|
-| `api/router.py` | 14 | 100% |
+| `api/router.py` | 15 | 100% |
+| `api/routes/admin_planning.py` | 46 | 100% |
 | `api/routes/admin_users.py` | 26 | 100% |
 | `api/routes/auth.py` | 23 | 100% |
 | `api/routes/balance.py` | 30 | 100% |
@@ -50,7 +52,7 @@ cobrir o código async que executa na ponte do SQLAlchemy.
 | `main.py` | 82 | 100% |
 | `models/category.py` | 27 | 93% |
 | `models/investment.py` | 91 | 97% |
-| `models/investment_goal.py` | 16 | 100% |
+| `models/investment_goal.py` | 19 | 100% |
 | `models/recurring_transaction.py` | 35 | 97% |
 | `models/refresh_token.py` | 19 | 95% |
 | `models/spending_limit.py` | 18 | 100% |
@@ -65,7 +67,7 @@ cobrir o código async que executa na ponte do SQLAlchemy.
 | `repositories/category_repository.py` | 37 | 95% |
 | `repositories/investment_quote_repository.py` | 45 | 100% |
 | `repositories/investment_repository.py` | 70 | 100% |
-| `repositories/planning_repository.py` | 38 | 100% |
+| `repositories/planning_repository.py` | 44 | 100% |
 | `repositories/recurring_transaction_repository.py` | 40 | 100% |
 | `repositories/refresh_token_repository.py` | 18 | 100% |
 | `repositories/transaction_repository.py` | 57 | 97% |
@@ -75,18 +77,18 @@ cobrir o código async que executa na ponte do SQLAlchemy.
 | `schemas/base.py` | 7 | 100% |
 | `schemas/category.py` | 25 | 100% |
 | `schemas/investment.py` | 183 | 100% |
-| `schemas/planning.py` | 56 | 100% |
+| `schemas/planning.py` | 67 | 100% |
 | `schemas/recurring_transaction.py` | 43 | 100% |
 | `schemas/transaction.py` | 61 | 100% |
 | `schemas/user.py` | 57 | 100% |
 | `services/admin_user_service.py` | 65 | 100% |
 | `services/auth_service.py` | 105 | 97% |
 | `services/balance_service.py` | 63 | 100% |
-| `services/category_service.py` | 51 | 100% |
+| `services/category_service.py` | 56 | 100% |
 | `services/fixed_income.py` | 25 | 100% |
 | `services/investment_service.py` | 208 | 100% |
 | `services/market_service.py` | 23 | 100% |
-| `services/planning_service.py` | 73 | 97% |
+| `services/planning_service.py` | 97 | 97% |
 | `services/recurrence.py` | 25 | 100% |
 | `services/recurring_transaction_service.py` | 103 | 100% |
 | `services/report_service.py` | 102 | 100% |
@@ -94,7 +96,7 @@ cobrir o código async que executa na ponte do SQLAlchemy.
 | `services/user_service.py` | 37 | 100% |
 | `version.py` | 1 | 100% |
 
-55 dos 74 módulos estão em 100% nesta medição.
+56 dos 75 módulos estão em 100% nesta medição.
 
 ## O que não está coberto
 
@@ -113,6 +115,10 @@ Comportamento que existe no código e nenhum teste exercita. Em ordem de risco:
 | `api/routes/health.py:46-47` | readiness quando o banco não responde |
 | `repositories/user_repository.py:55`, `category_repository.py:73`, `transaction_repository.py:145` | o erro genérico para constraint desconhecida |
 | `cli.py` (50%) | `create-admin` e o `main()` do argparse; só `seed-dev` é testado |
+
+O catálogo global não acrescentou lacunas de linha: o CRUD administrativo de categorias e objetivos
+é exercitado em `tests/api/test_admin_planning.py`, nas matrizes de autorização e de CRUD. A migração
+que permite objetivos globais é aplicada pela suíte de integração antes de cada rodada.
 
 **Três dos quatro caminhos de `auth_service` que abriam esta lista saíram dela** — login e refresh de
 conta desativada, e refresh com token expirado —, cobertos por `tests/api/test_sessions.py`. Eram

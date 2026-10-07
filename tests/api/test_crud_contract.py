@@ -37,7 +37,7 @@ from fastapi import FastAPI
 from schemas.base import PatchIn
 from schemas.category import CategoryUpdateIn
 from schemas.investment import InvestmentUpdateIn
-from schemas.planning import GoalPatch, LimitPatch
+from schemas.planning import GlobalGoalPatch, GoalPatch, LimitPatch
 from schemas.recurring_transaction import RecurringTransactionUpdateIn
 from schemas.transaction import TransactionUpdateIn
 from schemas.user import AdminUserUpdateIn
@@ -220,6 +220,28 @@ class Crud:
 
 RESOURCES = [
     Crud(
+        name="categorias-globais-admin",
+        collection="/api/v1/admin/categories",
+        item="/api/v1/admin/categories/{id}",
+        create=a_category,
+        patch={"name": "Categoria global alterada"},
+        update_schema=CategoryUpdateIn,
+        actor=register_admin,
+        paginated=False,
+        item_read=False,
+    ),
+    Crud(
+        name="objetivos-globais-admin",
+        collection="/api/v1/admin/investment-goals",
+        item="/api/v1/admin/investment-goals/{id}",
+        create=a_goal,
+        patch={"name": "Objetivo global alterado"},
+        update_schema=GlobalGoalPatch,
+        actor=register_admin,
+        paginated=False,
+        item_read=False,
+    ),
+    Crud(
         name="limites",
         collection="/api/v1/spending-limits",
         item="/api/v1/spending-limits/{id}",
@@ -295,6 +317,8 @@ RESOURCES = [
 ]
 
 ROUTE_TEMPLATES = {
+    "/api/v1/admin/categories/{id}": "/api/v1/admin/categories/{category_id}",
+    "/api/v1/admin/investment-goals/{id}": "/api/v1/admin/investment-goals/{goal_id}",
     "/api/v1/spending-limits/{id}": "/api/v1/spending-limits/{limit_id}",
     "/api/v1/investment-goals/{id}": "/api/v1/investment-goals/{goal_id}",
     "/api/v1/categories/{id}": "/api/v1/categories/{category_id}",

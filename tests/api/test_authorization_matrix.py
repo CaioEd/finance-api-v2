@@ -428,8 +428,51 @@ PROTECTED_ROUTES = [
     ProtectedRoute("GET", "/api/v1/reports/balance/range", setup=a_report_date_range),
 ]
 
+
 # Autenticar não basta: estas exigem o papel de administrador.
+def a_global_category_of(client: ApiClient, admin: RegisteredUser) -> str:
+    response = client.post(
+        "/api/v1/admin/categories",
+        headers=admin.auth,
+        json={"name": "Categoria global", "kind": "expense"},
+    )
+    response.raise_for_status()
+    return f"/api/v1/admin/categories/{response.json()['id']}"
+
+
+def a_global_goal_of(client: ApiClient, admin: RegisteredUser) -> str:
+    response = client.post(
+        "/api/v1/admin/investment-goals",
+        headers=admin.auth,
+        json={"name": "Reserva global", "target_amount": "1000.00"},
+    )
+    response.raise_for_status()
+    return f"/api/v1/admin/investment-goals/{response.json()['id']}"
+
+
 ADMIN_ROUTES = [
+    ProtectedRoute("GET", "/api/v1/admin/categories"),
+    ProtectedRoute("POST", "/api/v1/admin/categories", body={"name": "Global", "kind": "expense"}),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/admin/categories/{category_id}",
+        body={"name": "Global 2"},
+        setup=a_global_category_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/admin/categories/{category_id}", setup=a_global_category_of),
+    ProtectedRoute("GET", "/api/v1/admin/investment-goals"),
+    ProtectedRoute(
+        "POST",
+        "/api/v1/admin/investment-goals",
+        body={"name": "Reserva", "target_amount": "1000.00"},
+    ),
+    ProtectedRoute(
+        "PATCH",
+        "/api/v1/admin/investment-goals/{goal_id}",
+        body={"name": "Reserva 2"},
+        setup=a_global_goal_of,
+    ),
+    ProtectedRoute("DELETE", "/api/v1/admin/investment-goals/{goal_id}", setup=a_global_goal_of),
     ProtectedRoute("GET", "/api/v1/admin/users"),
     ProtectedRoute(
         "POST",
@@ -548,9 +591,8 @@ def test_admin_route_accepts_an_admin(client: ApiClient, route: ProtectedRoute) 
     admin = register_admin(client)
     target = register_user(client, email="bruno@exemplo.com", username="bruno")
 
-    response = client.request(
-        route.method, route.url(target.id), headers=admin.auth, json=route.body
-    )
+    path = route.setup(client, admin) if route.setup else route.url(target.id)
+    response = client.request(route.method, path, headers=admin.auth, json=route.body)
 
     assert response.status_code in {200, 201, 204}, f"{route} recusou um administrador"
 

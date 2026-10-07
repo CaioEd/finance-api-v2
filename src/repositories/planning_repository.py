@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.category import Category, CategoryKind
@@ -71,7 +71,7 @@ class PlanningRepository:
             (
                 await self.session.scalars(
                     select(InvestmentGoal)
-                    .where(InvestmentGoal.user_id == user_id)
+                    .where(or_(InvestmentGoal.user_id == user_id, InvestmentGoal.user_id.is_(None)))
                     .order_by(InvestmentGoal.created_at.desc())
                 )
             ).all()
@@ -81,6 +81,22 @@ class PlanningRepository:
         result = await self.session.scalars(
             select(InvestmentGoal).where(
                 InvestmentGoal.user_id == user_id, InvestmentGoal.id == resource_id
+            )
+        )
+        return result.first()
+
+    async def global_goals(self) -> list[InvestmentGoal]:
+        result = await self.session.scalars(
+            select(InvestmentGoal)
+            .where(InvestmentGoal.user_id.is_(None))
+            .order_by(InvestmentGoal.created_at.desc())
+        )
+        return list(result.all())
+
+    async def global_goal(self, resource_id: UUID) -> InvestmentGoal | None:
+        result = await self.session.scalars(
+            select(InvestmentGoal).where(
+                InvestmentGoal.id == resource_id, InvestmentGoal.user_id.is_(None)
             )
         )
         return result.first()
